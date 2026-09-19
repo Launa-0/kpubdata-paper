@@ -1,0 +1,65 @@
+# ---------- Python ----------
+__pycache__/
+*.py[cod]
+*.egg-info/
+.eggs/
+build/
+dist/
+.venv/
+venv/
+.python-version
+.uv-cache/
+.ruff_cache/
+.mypy_cache/
+.pytest_cache/
+.coverage
+htmlcov/
+.ipynb_checkpoints/
+
+# ---------- Data / experiment outputs ----------
+# 실험 데이터·산출물은 원칙적으로 커밋하지 않음 (필요하면 !로 예외 지정)
+data/raw/
+data/processed/
+outputs/
+*.parquet
+*.jsonl
+*.csv
+*.xlsx
+*.h5
+*.pkl
+
+# ---------- LaTeX ----------
+*.aux
+*.bbl
+*.blg
+*.fdb_latexmk
+*.fls
+*.log
+*.out
+*.synctex.gz
+*.synctex(busy)
+*.toc
+*.lof
+*.lot
+*.nav
+*.snm
+*.vrb
+*.bcf
+*.run.xml
+*.xdv
+
+# ---------- Secrets ----------
+.env
+.env.*
+*.pem
+secrets/
+# 공공데이터포털(data.go.kr) 등 API 키가 든 설정 파일
+config.local.*
+
+# ---------- OS / editors ----------
+.DS_Store
+Thumbs.db
+desktop.ini
+.idea/
+.vscode/
+*.swp
