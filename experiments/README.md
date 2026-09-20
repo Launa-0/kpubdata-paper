@@ -15,6 +15,7 @@ experiments/
 ├── src/kpx/              # the harness package
 │   ├── contract.py       # condition-runner contract  ← read this first
 │   ├── steps.py          # transformation step recording
+│   ├── baseline.py       # monolithic baseline equivalence checks
 │   ├── metrics/          # quality / code_metrics / runtime / reproducibility
 │   └── tasks/            # task01_price_analysis … task04_bike
 ├── tests/
@@ -88,6 +89,36 @@ def prepare(self, ctx: RunContext) -> AnalysisInput:
 
 `ctx.step` is a no-op when no recorder is attached, so preparation code can be
 exercised in a plain unit test without building a whole run.
+
+## The monolithic baseline
+
+`monolithic` is the control condition, and the claim it supports is narrow: a
+structured, reusable pipeline against a single-pass transformation — **not** a
+comparison of transformation quality. See
+[`docs/monolithic-baseline.md`](docs/monolithic-baseline.md) for the full
+convention and the Baseline Bias paragraph it feeds. The rules:
+
+* **No special-casing.** `monolithic` is an ordinary `ConditionRunner`, reads
+  Bronze like the Medallion path does, and no code in the harness branches on
+  it.
+* **It imports the task's transformations, it does not reimplement them.** Each
+  task keeps its helpers in `transforms.py`; `monolithic.py` imports from it and
+  defines only its own orchestration. Reuse makes the baseline slightly more
+  capable than a realistic one-off script — a bias against our own hypothesis,
+  which is the safer error.
+* **Equivalence is asserted, not claimed.** A baseline that reproduces the whole
+  pipeline must reach the same `AnalysisInput` as the full Medallion path.
+
+```python
+report = check_baseline_equivalence(
+    gold.Runner(), monolithic.Runner(), ctx, key=["district_code", "year_month"]
+)
+report.raise_for_status()
+```
+
+The check is applied to `monolithic` only. `bronze`, `silver` and `gold` are
+allowed to disagree with each other — they read layers of differing quality, and
+that difference is what RQ3 measures.
 
 ## Snapshots
 
