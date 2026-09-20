@@ -89,6 +89,43 @@ def prepare(self, ctx: RunContext) -> AnalysisInput:
 `ctx.step` is a no-op when no recorder is attached, so preparation code can be
 exercised in a plain unit test without building a whole run.
 
+## Snapshots
+
+Every run is pinned to a `snapshot_id`, and the id embeds the content digest:
+
+```
+seoul-apartment-trades/20260315-4f2a91c0d3b7
+                       ^date    ^digest prefix
+```
+
+Two snapshots with the same id necessarily hold the same bytes. R1 can therefore
+*check* "identical source" rather than assume it, and R2 can say which of
+T1/T2/T3 a build consumed. The date prefix keeps ids readable and sortable,
+which matters because R2 compares snapshots over time.
+
+```
+snapshots/<dataset>/<date>-<digest>/
+├── metadata.json     # the Snapshot record; committed
+└── source/           # the frozen bytes; git-ignored, republished separately
+```
+
+Only `metadata.json` is committed. The data itself is published on Hugging Face;
+a reader restores `source/` and `kpx snapshot verify` confirms they restored the
+right thing.
+
+```bash
+kpx snapshot list                  # registered snapshots, oldest first
+kpx snapshot show <snapshot_id>    # the citation block quoted in the paper
+kpx snapshot verify                # re-digest stored bytes; exit 1 on drift
+```
+
+`verify` runs before every reproducibility build. A snapshot that has drifted
+invalidates R1's premise, so it has to break the build rather than be measured
+silently.
+
+A snapshot records its data's own `period` separately from `retrieved_at`: a
+pull made in March 2026 may cover 2020–2024, and Table 1 needs both.
+
 ## Development
 
 ```bash

@@ -21,6 +21,8 @@ from kpx.contract import (
     RunContext,
     condition_layer,
 )
+from kpx.digest import FileEntry, TreeDigest, digest_tree, file_sha256
+from kpx.snapshot import Snapshot, SnapshotError, SnapshotStore, VerifyResult, default_store
 from kpx.steps import Step, StepRecorder
 
 __all__ = [
@@ -31,11 +33,20 @@ __all__ = [
     "Condition",
     "ConditionRunner",
     "DatasetResolver",
+    "FileEntry",
     "Layer",
     "RunContext",
+    "Snapshot",
+    "SnapshotError",
+    "SnapshotStore",
     "Step",
     "StepRecorder",
+    "TreeDigest",
+    "VerifyResult",
     "condition_layer",
+    "default_store",
+    "digest_tree",
+    "file_sha256",
 ]
 
 __version__ = "0.1.0"

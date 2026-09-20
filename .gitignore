@@ -69,7 +69,9 @@ desktop.ini
 !experiments/results/*.parquet
 !experiments/results/*.csv
 !experiments/figures/*
-!experiments/snapshots/**/*.json
+# 스냅샷은 metadata.json만 커밋하고 원본 바이트는 별도 공개한다.
+experiments/snapshots/*/*/source/
+!experiments/snapshots/**/metadata.json
 # 빌드된 데이터셋 artifact는 크기 때문에 커밋하지 않는다 (Hugging Face로 공개)
 experiments/datasets/**
 !experiments/datasets/.gitkeep
