@@ -1,0 +1,25 @@
+name: experiments
+
+on:
+  push:
+    branches: [main]
+    paths: ["experiments/**", ".github/workflows/experiments.yml"]
+  pull_request:
+    paths: ["experiments/**", ".github/workflows/experiments.yml"]
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: experiments
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v5
+        with:
+          enable-cache: true
+      - run: uv sync --extra dev --extra analysis
+      - run: uv run ruff check src tests
+      - run: uv run ruff format --check src tests
+      - run: uv run mypy src
+      - run: uv run pytest

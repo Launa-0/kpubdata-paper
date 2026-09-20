@@ -63,3 +63,13 @@ desktop.ini
 .idea/
 .vscode/
 *.swp
+
+# ---------- 실험 산출물 예외 ----------
+# 재현 가능한 벤치마크로 공개해야 하는 산출물은 커밋한다.
+!experiments/results/*.parquet
+!experiments/results/*.csv
+!experiments/figures/*
+!experiments/snapshots/**/*.json
+# 빌드된 데이터셋 artifact는 크기 때문에 커밋하지 않는다 (Hugging Face로 공개)
+experiments/datasets/**
+!experiments/datasets/.gitkeep
