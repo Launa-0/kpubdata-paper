@@ -56,7 +56,7 @@ def condition_layer(condition: Condition) -> Layer:
     """
     if condition not in CONDITIONS:
         raise ValueError(f"unknown condition: {condition!r}")
-    return "bronze" if condition == "monolithic" else condition  # type: ignore[return-value]
+    return "bronze" if condition == "monolithic" else condition
 
 
 @runtime_checkable
