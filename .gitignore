@@ -72,6 +72,8 @@ desktop.ini
 # 스냅샷은 metadata.json만 커밋하고 원본 바이트는 별도 공개한다.
 experiments/snapshots/*/*/source/
 !experiments/snapshots/**/metadata.json
-# 빌드된 데이터셋 artifact는 크기 때문에 커밋하지 않는다 (Hugging Face로 공개)
-experiments/datasets/**
+# 빌드된 데이터셋은 크기 때문에 커밋하지 않고 (Hugging Face로 공개),
+# 어떤 pipeline version이 만들었는지 기록한 artifact.json만 커밋한다.
+experiments/datasets/*/*/data/
 !experiments/datasets/.gitkeep
+!experiments/datasets/**/artifact.json

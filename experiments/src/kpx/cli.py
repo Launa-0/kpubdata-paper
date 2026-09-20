@@ -9,11 +9,16 @@ from pathlib import Path
 
 from kpx import __version__
 from kpx.contract import CONDITIONS, LAYERS
+from kpx.pipeline import ArtifactStore, PipelineError, default_artifacts
 from kpx.snapshot import SnapshotError, SnapshotStore, default_store
 
 
 def _store(args: argparse.Namespace) -> SnapshotStore:
     return default_store(args.snapshots)
+
+
+def _artifacts(args: argparse.Namespace) -> ArtifactStore:
+    return default_artifacts(args.datasets)
 
 
 def _cmd_info(args: argparse.Namespace) -> int:
@@ -60,6 +65,45 @@ def _cmd_snapshot_verify(args: argparse.Namespace) -> int:
     return 1 if failed else 0
 
 
+def _cmd_artifact_list(args: argparse.Namespace) -> int:
+    artifacts = _artifacts(args).list_artifacts(args.dataset)
+    if not artifacts:
+        print("no artifacts registered")
+        return 0
+    for artifact in artifacts:
+        print(
+            f"{artifact.dataset:<32} {artifact.layer:<8} "
+            f"rows={artifact.row_count:,}  "
+            f"pipeline={artifact.pipeline_version}  "
+            f"snapshot={artifact.snapshot_id}"
+        )
+    return 0
+
+
+def _cmd_artifact_show(args: argparse.Namespace) -> int:
+    print(_artifacts(args).load(args.dataset, args.layer).citation())
+    return 0
+
+
+def _cmd_artifact_verify(args: argparse.Namespace) -> int:
+    store = _artifacts(args)
+    if args.dataset and args.layer:
+        results = [store.verify(args.dataset, args.layer)]
+    else:
+        results = store.verify_all(args.dataset)
+    if not results:
+        print("no artifacts registered")
+        return 0
+    failed = 0
+    for result in results:
+        if result.ok:
+            print(f"ok     {result.dataset} ({result.layer})")
+        else:
+            failed += 1
+            print(f"FAILED {result.dataset} ({result.layer}): {result.reason}")
+    return 1 if failed else 0
+
+
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(prog="kpx", description="Medallion evaluation harness")
     parser.add_argument("--version", action="version", version=f"kpx {__version__}")
@@ -69,6 +113,13 @@ def build_parser() -> argparse.ArgumentParser:
         default=None,
         metavar="DIR",
         help="snapshot store root (default: experiments/snapshots)",
+    )
+    parser.add_argument(
+        "--datasets",
+        type=Path,
+        default=None,
+        metavar="DIR",
+        help="artifact store root (default: experiments/datasets)",
     )
     sub = parser.add_subparsers(dest="command", required=True)
 
@@ -89,6 +140,23 @@ def build_parser() -> argparse.ArgumentParser:
     verify.add_argument("snapshot_id", nargs="?", default=None, help="default: verify all")
     verify.set_defaults(func=_cmd_snapshot_verify)
 
+    artifact = sub.add_parser("artifact", help="inspect built dataset artifacts")
+    artifact_sub = artifact.add_subparsers(dest="artifact_command", required=True)
+
+    artifact_list = artifact_sub.add_parser("list", help="list registered artifacts")
+    artifact_list.add_argument("--dataset", default=None, help="restrict to one dataset")
+    artifact_list.set_defaults(func=_cmd_artifact_list)
+
+    artifact_show = artifact_sub.add_parser("show", help="print an artifact's provenance block")
+    artifact_show.add_argument("dataset")
+    artifact_show.add_argument("layer", choices=LAYERS)
+    artifact_show.set_defaults(func=_cmd_artifact_show)
+
+    artifact_verify = artifact_sub.add_parser("verify", help="re-digest built bytes")
+    artifact_verify.add_argument("dataset", nargs="?", default=None, help="default: verify all")
+    artifact_verify.add_argument("layer", nargs="?", default=None, choices=[*LAYERS, None])
+    artifact_verify.set_defaults(func=_cmd_artifact_verify)
+
     return parser
 
 
@@ -96,7 +164,7 @@ def main(argv: Sequence[str] | None = None) -> int:
     args = build_parser().parse_args(argv)
     try:
         exit_code: int = args.func(args)
-    except SnapshotError as error:
+    except (SnapshotError, PipelineError) as error:
         print(f"error: {error}", file=sys.stderr)
         return 2
     return exit_code

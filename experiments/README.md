@@ -18,7 +18,7 @@ experiments/
 │   ├── metrics/          # quality / code_metrics / runtime / reproducibility
 │   └── tasks/            # task01_price_analysis … task04_bike
 ├── tests/
-├── datasets/             # built dataset artifacts (git-ignored)
+├── datasets/             # built dataset artifacts + provenance records
 ├── snapshots/            # frozen source snapshots + metadata
 ├── results/              # experiment_results.parquet (committed)
 └── figures/              # generated figures (committed)
@@ -29,9 +29,11 @@ are subpackages of `kpx` instead, so that the harness is importable and
 installable rather than a collection of loose scripts — `metrics/quality.py` in
 the plan is `src/kpx/metrics/quality.py` here.
 
-`datasets/` is ignored by git because the artifacts are large and republished on
-Hugging Face. `results/` and `figures/` are **not** ignored: they are what makes
-the benchmark reproducible for a reader who does not rerun the pipeline.
+The built data under `datasets/` is ignored by git because the artifacts are
+large and republished on Hugging Face; each layer's `artifact.json` — which
+records the snapshot and pipeline version that produced it — is committed.
+`results/` and `figures/` are **not** ignored either: they are what makes the
+benchmark reproducible for a reader who does not rerun the pipeline.
 
 ## Conditions
 
@@ -125,6 +127,55 @@ silently.
 
 A snapshot records its data's own `period` separately from `retrieved_at`: a
 pull made in March 2026 may cover 2020–2024, and Table 1 needs both.
+
+## Pipeline version
+
+R1 claims that identical source, identical code and identical config produce
+identical output. The source is pinned by the snapshot and the output by its
+digest; this pins the middle one.
+
+```
+pipeline_version = <builder_version>+<config_hash[:12]>
+                   ^ the code           ^ the configuration
+```
+
+One string, which moves if either half moves, quoted in the paper and stored in
+every result row. The component versions are kept beside it, because a reader
+debugging a mismatch needs to know *which* half moved.
+
+`kpubdata-builder` already writes a `BuildManifest` carrying its own
+`build_environment` (Python, `kpubdata` and builder versions), per-source
+provenance and an inputs fingerprint. None of that is reimplemented here —
+`PipelineVersion.from_build_manifest` reads it, as plain data. The harness never
+imports the builder, so a reader can verify a published artifact without
+installing it.
+
+```
+datasets/<dataset>/<layer>/
+├── artifact.json   # the DatasetArtifact record; committed
+└── data/           # the built files; git-ignored, republished separately
+```
+
+```bash
+kpx artifact list                      # registered artifacts, Medallion order
+kpx artifact show <dataset> <layer>    # the provenance block quoted in the paper
+kpx artifact verify                    # re-digest built bytes; exit 1 on drift
+```
+
+```python
+artifact.run_fields()   # {'source_snapshot': ..., 'pipeline_version': ...}
+assert_same_pipeline(artifacts)   # R2's precondition, checked rather than assumed
+```
+
+R2 varies the source across T1/T2/T3 and concludes the pipeline is stable under
+that variation. That conclusion only follows if the pipeline itself did not
+move, so `assert_same_pipeline` refuses a comparison across versions rather than
+letting a pipeline change be attributed to the source.
+
+The config hash is taken over canonical JSON: keys sorted, so a config assembled
+in another order hashes the same, and `Path` values written POSIX-style, so a
+config naming a directory does not hash differently on Windows — the same defect
+that made snapshot ids platform-dependent, reached through another door.
 
 ## Development
 
