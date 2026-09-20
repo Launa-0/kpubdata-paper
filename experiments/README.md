@@ -126,6 +126,56 @@ silently.
 A snapshot records its data's own `period` separately from `retrieved_at`: a
 pull made in March 2026 may cover 2020–2024, and Table 1 needs both.
 
+## Measuring runtime and memory
+
+The protocol is fixed for every task, not chosen per task:
+
+| | |
+| :--- | :--- |
+| warm-up | 1 run, discarded |
+| measurement | 5 runs, all kept |
+| reported | **median** into `runtime_seconds`, with mean and stdev beside it |
+
+```python
+measurement = measure(lambda: runner.prepare(ctx))
+measurement.summary()   # 'median 1.243s ± 0.031 over 5 runs, peak +212.4 MiB'
+measurement.result      # what the last measured run returned
+```
+
+**The warm-up** exists because the first run pays for imports, lazily-built
+pandas machinery and a cold page cache. That cost is paid once per session, not
+once per analysis, so charging it to whichever condition ran first would rank
+conditions by the order they happened to run in.
+
+**The median** is reported because five runs on a shared machine will contain
+the occasional outlier from whatever else the OS decided to do. Mean and stdev
+are reported beside it so a reader can see how noisy the measurement was rather
+than trust that it was not.
+
+**Garbage is collected before each run, but collection stays enabled.** Left
+alone, run *n* pays to collect run *n-1*'s garbage. Disabling the collector —
+what `timeit` does — would measure something no real run experiences.
+
+**Peak memory** is sampled from the process's RSS in a background thread and
+reported as the high-water mark *above the baseline taken just before the run*;
+the absolute figure is dominated by the interpreter, not by the condition. It is
+a secondary figure: CPython does not reliably return freed memory to the OS, so
+a later run in the same process starts from a higher baseline and its delta
+under-reports. Conditions are not ranked on it alone.
+
+### The environment
+
+Runtime is comparable only within one environment, so the artifact ships the one
+it was measured in:
+
+```bash
+kpx env             # the Methodology block
+kpx env --json      # results/environment.json
+```
+
+A library that is not installed is omitted rather than recorded as unknown —
+"scipy: not installed" in an environment table tells a reader nothing.
+
 ## Development
 
 ```bash
