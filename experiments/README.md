@@ -103,6 +103,11 @@ Two snapshots with the same id necessarily hold the same bytes. R1 can therefore
 T1/T2/T3 a build consumed. The date prefix keeps ids readable and sortable,
 which matters because R2 compares snapshots over time.
 
+The digest is platform-independent. Paths go into the manifest that is hashed,
+so they are spelled POSIX-style and NFC-normalized rather than however the local
+filesystem spells them — otherwise a reader restoring the published data on
+another OS would compute a different id for the same bytes.
+
 ```
 snapshots/<dataset>/<date>-<digest>/
 ├── metadata.json     # the Snapshot record; committed
