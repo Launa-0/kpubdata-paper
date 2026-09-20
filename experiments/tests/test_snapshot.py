@@ -109,7 +109,7 @@ def test_list_is_ordered_oldest_first(store: SnapshotStore, source: Path) -> Non
     t3 = register(store, source, retrieved_at=datetime(2026, 9, 1))
     (source / "2023.json").write_text("[]", encoding="utf-8")
     t1 = register(store, source, retrieved_at=datetime(2026, 1, 1))
-    assert [s.snapshot_id for s in store.list()] == [
+    assert [s.snapshot_id for s in store.list_snapshots()] == [
         t1.snapshot_id,
         t2.snapshot_id,
         t3.snapshot_id,
@@ -119,7 +119,8 @@ def test_list_is_ordered_oldest_first(store: SnapshotStore, source: Path) -> Non
 def test_list_can_filter_by_dataset(store: SnapshotStore, source: Path) -> None:
     register(store, source)
     register(store, source, dataset="seoul-bike-rent-month")
-    assert [s.dataset for s in store.list("seoul-bike-rent-month")] == ["seoul-bike-rent-month"]
+    bike = store.list_snapshots("seoul-bike-rent-month")
+    assert [s.dataset for s in bike] == ["seoul-bike-rent-month"]
 
 
 def test_re_registering_identical_bytes_is_idempotent(store: SnapshotStore, source: Path) -> None:

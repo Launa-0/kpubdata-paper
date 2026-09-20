@@ -25,7 +25,7 @@ def _cmd_info(args: argparse.Namespace) -> int:
 
 
 def _cmd_snapshot_list(args: argparse.Namespace) -> int:
-    snapshots = _store(args).list(args.dataset)
+    snapshots = _store(args).list_snapshots(args.dataset)
     if not snapshots:
         print("no snapshots registered")
         return 0

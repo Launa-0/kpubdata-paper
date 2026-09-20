@@ -237,7 +237,7 @@ class SnapshotStore:
             raise SnapshotError(f"no snapshot registered as {snapshot_id}")
         return Snapshot.from_json(json.loads(path.read_text(encoding="utf-8")))
 
-    def list(self, dataset: str | None = None) -> list[Snapshot]:
+    def list_snapshots(self, dataset: str | None = None) -> list[Snapshot]:
         """Every registered snapshot, oldest first.
 
         R2 compares snapshots in time order, so the ordering is part of the API
@@ -283,7 +283,7 @@ class SnapshotStore:
         )
 
     def verify_all(self, dataset: str | None = None) -> list[VerifyResult]:
-        return [self.verify(s.snapshot_id) for s in self.list(dataset)]
+        return [self.verify(s.snapshot_id) for s in self.list_snapshots(dataset)]
 
 
 def default_store(root: Path | str | None = None) -> SnapshotStore:

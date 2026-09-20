@@ -63,7 +63,7 @@ def test_snapshot_verify_fails_loudly_on_drift(
 ) -> None:
     """A drifted snapshot must break the build, not be silently measured."""
     store = SnapshotStore(snapshots)
-    snapshot_id = store.list()[0].snapshot_id
+    snapshot_id = store.list_snapshots()[0].snapshot_id
     (store.source_path(snapshot_id) / "2020.json").write_text("drift", encoding="utf-8")
     assert main(["--snapshots", str(snapshots), "snapshot", "verify"]) == 1
     assert "FAILED" in capsys.readouterr().out
@@ -72,7 +72,7 @@ def test_snapshot_verify_fails_loudly_on_drift(
 def test_snapshot_show_prints_the_citation_block(
     snapshots: Path, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    snapshot_id = SnapshotStore(snapshots).list()[0].snapshot_id
+    snapshot_id = SnapshotStore(snapshots).list_snapshots()[0].snapshot_id
     assert main(["--snapshots", str(snapshots), "snapshot", "show", snapshot_id]) == 0
     assert "SHA-256: " in capsys.readouterr().out
 
