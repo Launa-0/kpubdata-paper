@@ -15,6 +15,8 @@ experiments/
 ├── src/kpx/              # the harness package
 │   ├── contract.py       # condition-runner contract  ← read this first
 │   ├── steps.py          # transformation step recording
+│   ├── snapshot.py       # frozen source snapshots
+│   ├── provenance.py     # build recipe, result digest, lineage
 │   ├── results.py        # result schema and store
 │   ├── metrics/          # quality / code_metrics / runtime / reproducibility
 │   └── tasks/            # task01_price_analysis … task04_bike
@@ -104,6 +106,11 @@ Two snapshots with the same id necessarily hold the same bytes. R1 can therefore
 T1/T2/T3 a build consumed. The date prefix keeps ids readable and sortable,
 which matters because R2 compares snapshots over time.
 
+The digest is platform-independent. Paths go into the manifest that is hashed,
+so they are spelled POSIX-style and NFC-normalized rather than however the local
+filesystem spells them — otherwise a reader restoring the published data on
+another OS would compute a different id for the same bytes.
+
 ```
 snapshots/<dataset>/<date>-<digest>/
 ├── metadata.json     # the Snapshot record; committed
@@ -176,6 +183,46 @@ default so they cannot reach a figure by accident.
 `seed` is in the schema although the plan's field list omits it: a run is keyed
 by `(task, condition, snapshot_id, pipeline_version, seed)`, and task02 runs
 five seeds per condition, which would otherwise be five indistinguishable rows.
+
+## Build provenance
+
+RQ4 needs a precise version of "deterministic build", so provenance separates
+two things that are easy to conflate:
+
+| | |
+| :--- | :--- |
+| the **recipe** | snapshot, pipeline version, transformation config, upstream layer — its hash is the `build_id` |
+| the **result** | the bytes the recipe produced — its hash is the `output_checksum` |
+
+R1 then reads: *the same `build_id` must give the same `output_checksum`*. R2
+holds the recipe constant except `snapshot_id` and asks whether the pipeline's
+contract survives — a different `output_checksum` there is expected, a broken
+schema is not.
+
+The captured environment (Python version, platform, library versions)
+deliberately does **not** feed the `build_id`. If it did, every machine would
+compute a different id and R1 could never compare a rebuild across machines —
+which is exactly the comparison a reader reproducing the paper makes.
+`Environment.differences()` answers the first question a mismatched checksum
+raises: did the environment move?
+
+Provenance carries lineage, so a schema breakage found in R2 can be attributed
+to the layer that introduced it:
+
+```bash
+kpx build list --layer silver
+kpx build lineage <build_id>     # bronze → silver → gold
+```
+
+```
+datasets/<dataset>/<layer>/<build_id>/
+├── provenance.json
+└── …the artifact files…
+```
+
+Keying the directory by `build_id` means two builds of the same recipe land in
+the same place, so an R1 repeat is a comparison rather than an accumulation of
+directories.
 
 ## Development
 

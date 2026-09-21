@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import hashlib
+import unicodedata
 from pathlib import Path
 
 import pytest
@@ -69,6 +70,42 @@ def test_nested_files_are_included(tmp_path: Path) -> None:
     digest = digest_tree(tmp_path)
     assert digest.file_count == 2
     assert [entry.path for entry in digest.files] == ["2020/01.json", "2021/01.json"]
+
+
+def test_manifest_paths_use_posix_separators(tmp_path: Path) -> None:
+    """A digest must identify bytes, not the OS that read them.
+
+    ``str(Path)`` would spell this ``2020\\01.json`` on Windows, giving the same
+    snapshot a different checksum and id there — so ``kpx snapshot verify``
+    would fail for any reader who restored the published data on another OS.
+    """
+    write(tmp_path, "2020/01/a.json", "a")
+    (entry,) = digest_tree(tmp_path).files
+    assert entry.path == "2020/01/a.json"
+    assert "\\" not in entry.path
+
+
+def test_file_names_are_nfc_normalized(tmp_path: Path) -> None:
+    """macOS hands back decomposed names where Linux and Windows do not."""
+    write(tmp_path, unicodedata.normalize("NFD", "거래금액.json"), "payload")
+    (entry,) = digest_tree(tmp_path).files
+    assert entry.path == unicodedata.normalize("NFC", "거래금액.json")
+
+
+def test_digest_is_the_same_whichever_normalization_the_filesystem_returns(
+    tmp_path: Path,
+) -> None:
+    composed = tmp_path / "composed"
+    decomposed = tmp_path / "decomposed"
+    write(composed, unicodedata.normalize("NFC", "거래금액.json"), "payload")
+    write(decomposed, unicodedata.normalize("NFD", "거래금액.json"), "payload")
+    assert digest_tree(composed).sha256 == digest_tree(decomposed).sha256
+
+
+def test_a_single_file_is_digested_under_its_own_name(tmp_path: Path) -> None:
+    path = write(tmp_path, unicodedata.normalize("NFD", "거래금액.json"), "payload")
+    (entry,) = digest_tree(path).files
+    assert entry.path == unicodedata.normalize("NFC", "거래금액.json")
 
 
 def test_missing_path_is_reported(tmp_path: Path) -> None:
