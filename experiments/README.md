@@ -224,6 +224,40 @@ Keying the directory by `build_id` means two builds of the same recipe land in
 the same place, so an R1 repeat is a comparison rather than an accumulation of
 directories.
 
+## Measuring analytical effort
+
+RQ2 asks what a condition costs to prepare data with. See
+[`docs/code-metrics.md`](docs/code-metrics.md) for the rules and the Construct
+Validity draft they feed.
+
+```python
+metrics = measure_preparation(silver.Runner(), transforms=transforms, steps=recorder.step_count)
+metrics.preprocessing_loc, metrics.function_count, metrics.measured
+```
+
+**Preparation is `prepare` and the private helpers it references. Everything
+else is analysis.** A method boundary, declared in the contract before any
+condition was written and identical for all four, rather than a judgement made
+once the numbers are visible.
+
+Four numbers, not one, because lines alone are not effort: `preprocessing_loc`,
+`function_count`, `transformation_steps` (recorded at run time), and
+`cyclomatic_complexity` as a secondary indicator — reported so a reader can see
+that a condition with fewer lines did not buy them with denser control flow.
+
+Two things are deliberately left out of the line count. **Library access**
+(`df.groupby`, `pd.to_datetime`) is not code the condition had to write.
+**Shared transformation helpers** add to `function_count` when used, but their
+bodies are not charged to any condition — every condition draws on the same
+`transforms.py`, the monolithic baseline is required to, and billing all of them
+for the same shared code would compress exactly the difference H2 is about.
+
+References, not calls: `df["거래금액"].map(parse_price)` never calls
+`parse_price` syntactically, and that is how transformations are normally
+applied here.
+
+`measured` and `transformations` are returned alongside the totals so a reviewer
+can check *what* was counted without re-deriving the graph by hand.
 ## Development
 
 ```bash
