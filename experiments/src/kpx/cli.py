@@ -11,6 +11,7 @@ from pathlib import Path
 from kpx import __version__
 from kpx.contract import CONDITIONS, LAYERS
 from kpx.metrics.runtime import MEASURED_RUNS, WARMUP_RUNS, describe_environment
+from kpx.provenance import ProvenanceError, ProvenanceStore
 from kpx.snapshot import SnapshotError, SnapshotStore, default_store
 
 
@@ -18,11 +19,17 @@ def _store(args: argparse.Namespace) -> SnapshotStore:
     return default_store(args.snapshots)
 
 
+def _builds(args: argparse.Namespace) -> ProvenanceStore:
+    root = args.datasets or Path(__file__).resolve().parents[2] / "datasets"
+    return ProvenanceStore(root)
+
+
 def _cmd_info(args: argparse.Namespace) -> int:
     print(f"kpx {__version__}")
     print(f"conditions: {', '.join(CONDITIONS)}")
     print(f"layers:     {', '.join(LAYERS)}")
     print(f"snapshots:  {_store(args).root}")
+    print(f"datasets:   {_builds(args).root}")
     print(f"protocol:   {WARMUP_RUNS} warm-up + {MEASURED_RUNS} measured runs")
     return 0
 
@@ -72,6 +79,27 @@ def _cmd_snapshot_verify(args: argparse.Namespace) -> int:
     return 1 if failed else 0
 
 
+def _cmd_build_list(args: argparse.Namespace) -> int:
+    builds = _builds(args).list_builds(args.dataset, args.layer)
+    if not builds:
+        print("no builds recorded")
+        return 0
+    for build in builds:
+        print(
+            f"{build.build_id}  {build.inputs.layer:<6} {build.inputs.dataset}  "
+            f"rows={build.row_count:,}  status={build.status}  "
+            f"out={build.output_checksum[:12]}"
+        )
+    return 0
+
+
+def _cmd_build_lineage(args: argparse.Namespace) -> int:
+    for depth, build in enumerate(_builds(args).lineage(args.build_id)):
+        indent = "  " * depth
+        print(f"{indent}{build.inputs.layer:<6} {build.build_id}  out={build.output_checksum[:12]}")
+    return 0
+
+
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(prog="kpx", description="Medallion evaluation harness")
     parser.add_argument("--version", action="version", version=f"kpx {__version__}")
@@ -81,6 +109,13 @@ def build_parser() -> argparse.ArgumentParser:
         default=None,
         metavar="DIR",
         help="snapshot store root (default: experiments/snapshots)",
+    )
+    parser.add_argument(
+        "--datasets",
+        type=Path,
+        default=None,
+        metavar="DIR",
+        help="built-dataset root (default: experiments/datasets)",
     )
     sub = parser.add_subparsers(dest="command", required=True)
 
@@ -105,6 +140,18 @@ def build_parser() -> argparse.ArgumentParser:
     verify.add_argument("snapshot_id", nargs="?", default=None, help="default: verify all")
     verify.set_defaults(func=_cmd_snapshot_verify)
 
+    build = sub.add_parser("build", help="inspect recorded layer builds")
+    build_sub = build.add_subparsers(dest="build_command", required=True)
+
+    build_list = build_sub.add_parser("list", help="list recorded builds, oldest first")
+    build_list.add_argument("--dataset", default=None)
+    build_list.add_argument("--layer", default=None, choices=LAYERS)
+    build_list.set_defaults(func=_cmd_build_list)
+
+    lineage = build_sub.add_parser("lineage", help="trace a build back to Bronze")
+    lineage.add_argument("build_id")
+    lineage.set_defaults(func=_cmd_build_lineage)
+
     return parser
 
 
@@ -112,7 +159,7 @@ def main(argv: Sequence[str] | None = None) -> int:
     args = build_parser().parse_args(argv)
     try:
         exit_code: int = args.func(args)
-    except SnapshotError as error:
+    except (SnapshotError, ProvenanceError) as error:
         print(f"error: {error}", file=sys.stderr)
         return 2
     return exit_code

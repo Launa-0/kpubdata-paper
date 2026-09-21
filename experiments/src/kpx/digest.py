@@ -14,11 +14,26 @@ responses — so the digest is defined over a whole tree. Each file is hashed, t
 ``(relative path, hash)`` pairs are sorted, and the digest is the hash of that
 manifest. Directory iteration order, which varies between filesystems, therefore
 cannot change the result.
+
+Paths go into the manifest, so how a path is *spelled* is part of the digest, and
+the spelling has to be a property of the snapshot rather than of the machine
+reading it. Two platform differences would otherwise leak in:
+
+* **Separators.** ``str(Path)`` yields ``2020\\01.json`` on Windows and
+  ``2020/01.json`` elsewhere.
+* **Unicode normalization.** macOS hands back decomposed filenames (NFD) where
+  Linux and Windows return what was written (usually NFC), so ``거래금액.json``
+  is two different strings depending on where it is read.
+
+Either one would give the same bytes different digests on different machines,
+which breaks R1's premise and makes ``kpx snapshot verify`` fail for any reader
+who restored the published data on another OS. :func:`manifest_path` fixes both.
 """
 
 from __future__ import annotations
 
 import hashlib
+import unicodedata
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -52,6 +67,16 @@ class TreeDigest:
         return self.sha256[:12]
 
 
+def manifest_path(path: Path, root: Path | None = None) -> str:
+    """Spell a path the way the manifest spells it, on every platform.
+
+    POSIX separators and NFC, so that a digest identifies the snapshot's
+    contents rather than the operating system that read them.
+    """
+    relative = path.relative_to(root) if root is not None else Path(path.name)
+    return unicodedata.normalize("NFC", relative.as_posix())
+
+
 def file_sha256(path: Path) -> str:
     """Stream ``path`` through SHA-256 so that large artifacts do not need RAM."""
     digest = hashlib.sha256()
@@ -73,11 +98,11 @@ def digest_tree(root: Path, *, exclude: frozenset[str] = EXCLUDED_NAMES) -> Tree
         raise FileNotFoundError(f"nothing to digest at {root}")
 
     if root.is_file():
-        entries = [FileEntry(root.name, file_sha256(root), root.stat().st_size)]
+        entries = [FileEntry(manifest_path(root), file_sha256(root), root.stat().st_size)]
     else:
         entries = [
             FileEntry(
-                path=str(child.relative_to(root)),
+                path=manifest_path(child, root),
                 sha256=file_sha256(child),
                 size_bytes=child.stat().st_size,
             )

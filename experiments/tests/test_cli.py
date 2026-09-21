@@ -102,3 +102,81 @@ def test_unknown_snapshot_exits_with_an_error(
     code = main(["--snapshots", str(snapshots), "snapshot", "show", "d/20260101-abc"])
     assert code == 2
     assert "error:" in capsys.readouterr().err
+
+
+@pytest.fixture
+def datasets(tmp_path: Path) -> Path:
+    from kpx.provenance import BuildInputs, ProvenanceStore, config_hash, record_build
+
+    artifact = tmp_path / "out"
+    artifact.mkdir()
+    (artifact / "data.parquet").write_bytes(b"rows")
+
+    root = tmp_path / "datasets"
+    store = ProvenanceStore(root)
+    bronze = BuildInputs(
+        dataset="seoul-apartment-trades",
+        layer="bronze",
+        snapshot_id="seoul-apartment-trades/20260315-4f2a91c0d3b7",
+        pipeline_version="0.1.0a0",
+        config_hash=config_hash({"preserve": True}),
+    )
+    silver = BuildInputs(
+        dataset=bronze.dataset,
+        layer="silver",
+        snapshot_id=bronze.snapshot_id,
+        pipeline_version=bronze.pipeline_version,
+        config_hash=config_hash({"normalize": "canonical"}),
+        upstream_build_id=bronze.build_id,
+    )
+    for index, inputs in enumerate((bronze, silver)):
+        store.write(
+            record_build(
+                artifact,
+                inputs=inputs,
+                row_count=234_512,
+                columns=["a"],
+                built_at=datetime(2026, 3, 16, 10, index),
+            )
+        )
+    return root
+
+
+def test_build_list(datasets: Path, capsys: pytest.CaptureFixture[str]) -> None:
+    assert main(["--datasets", str(datasets), "build", "list"]) == 0
+    out = capsys.readouterr().out
+    assert "bronze" in out
+    assert "silver" in out
+    assert "rows=234,512" in out
+
+
+def test_build_list_filters_by_layer(datasets: Path, capsys: pytest.CaptureFixture[str]) -> None:
+    assert main(["--datasets", str(datasets), "build", "list", "--layer", "silver"]) == 0
+    out = capsys.readouterr().out
+    assert "silver" in out
+    assert "bronze" not in out
+
+
+def test_build_list_when_empty(tmp_path: Path, capsys: pytest.CaptureFixture[str]) -> None:
+    assert main(["--datasets", str(tmp_path), "build", "list"]) == 0
+    assert "no builds recorded" in capsys.readouterr().out
+
+
+def test_build_lineage_runs_bronze_first(
+    datasets: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    from kpx.provenance import ProvenanceStore
+
+    silver = ProvenanceStore(datasets).list_builds(layer="silver")[0]
+    assert main(["--datasets", str(datasets), "build", "lineage", silver.build_id]) == 0
+    lines = capsys.readouterr().out.splitlines()
+    assert lines[0].startswith("bronze")
+    assert lines[1].startswith("  silver")
+
+
+def test_unknown_build_exits_with_an_error(
+    datasets: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    code = main(["--datasets", str(datasets), "build", "lineage", "0000000000000000"])
+    assert code == 2
+    assert "error:" in capsys.readouterr().err

@@ -17,6 +17,9 @@ dependencies = [
   # Peak RSS and host memory are measurements the harness reports, not
   # development tooling, so they ship with it.
   "psutil>=5.9",
+  # Cyclomatic complexity is a measurement the harness reports, not a
+  # development tool, so it ships with the harness rather than with dev.
+  "radon>=6.0,<7",
 ]
 
 [project.optional-dependencies]
@@ -31,7 +34,6 @@ dev = [
   "mypy>=1.10,<2",
   "pytest>=8.2,<9",
   "pytest-cov>=5,<6",
-  "radon>=6.0,<7",
   "ruff>=0.5,<1",
   "pandas-stubs",
   "types-psutil",
@@ -55,6 +57,10 @@ python_version = "3.12"
 strict = true
 warn_unused_configs = true
 mypy_path = ["src"]
+
+[[tool.mypy.overrides]]
+module = ["radon.*"]
+ignore_missing_imports = true
 
 [tool.pytest.ini_options]
 addopts = "-ra"
