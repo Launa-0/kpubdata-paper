@@ -308,6 +308,61 @@ kpx env --json      # results/environment.json
 A library that is not installed is omitted rather than recorded as unknown —
 "scipy: not installed" in an environment table tells a reader nothing.
 
+## Measuring data quality
+
+H1's six metrics, one interface applied unchanged to Bronze and Silver. The hard
+part is not computing rates — it is making them compare the same thing, when
+Bronze holds `"120,000"` in `거래금액` and Silver holds `1200000000` in
+`price_krw`. A `QualitySpec` states, in one layer's vocabulary, which column
+plays which role and how a value in it is read; everything else is identical.
+
+```python
+spec = QualitySpec(
+    columns=(
+        ColumnSpec("거래금액", role="price", interpret=parse_price, minimum=0),
+        ColumnSpec("전용면적", role="area", minimum=0),
+        ColumnSpec("법정동시군구코드", role="district_code", kind="code"),
+    ),
+    valid_codes=SEOUL_DISTRICT_CODES,
+)
+report = measure_quality(bronze, spec, layer="bronze")
+table2({"bronze": report, "silver": silver_report})
+figure3_data({"bronze": report, "silver": silver_report})
+```
+
+| Metric | Definition |
+| :--- | :--- |
+| `type_consistency` | values that read as their declared type / values present |
+| `missing_rate` | missing cells / cells, over required columns |
+| `duplicate_rate` | duplicate records / records |
+| `schema_conformance` | records where every required column is present, readable and in bounds |
+| `code_validity` | code values found in the reference code list |
+| `parsing_failure_rate` | records with at least one present-but-unreadable required value |
+
+**Missing and unreadable are counted separately** throughout. An absent value
+and a corrupt one are different defects, and collapsing them would let a layer
+trade one for the other silently.
+
+### Two ways this could manufacture H1
+
+**Reading Bronze naively.** `pd.to_numeric("120,000")` fails, and counting that
+as a parsing failure would measure how hostile we chose to be to Bronze rather
+than anything about the data. A Bronze spec passes the same interpretation
+functions the Silver build uses — the task's `transforms` helpers — so Bronze is
+credited with everything the pipeline can actually read.
+
+**Improving a rate by dropping rows.** A Silver build that deletes null rows
+reports a better missing rate for a reason unrelated to standardization. So
+missing rate is reported **per required column** as well as overall, and Table 2
+prints each layer's **row count in the same table** — a rate bought by dropping
+rows is visible at the same glance as the rate.
+
+`code_validity` is `None` when no reference code list is given, rather than
+falling back to a five-digit regex: that would accept `99999`, so it measures
+format, not validity.
+
+Table 2's `Improvement` column is signed so **positive always means better**,
+whichever direction the underlying metric runs.
 ## Development
 
 ```bash
