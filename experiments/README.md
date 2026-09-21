@@ -126,6 +126,46 @@ silently.
 A snapshot records its data's own `period` separately from `retrieved_at`: a
 pull made in March 2026 may cover 2020–2024, and Table 1 needs both.
 
+## Build provenance
+
+RQ4 needs a precise version of "deterministic build", so provenance separates
+two things that are easy to conflate:
+
+| | |
+| :--- | :--- |
+| the **recipe** | snapshot, pipeline version, transformation config, upstream layer — its hash is the `build_id` |
+| the **result** | the bytes the recipe produced — its hash is the `output_checksum` |
+
+R1 then reads: *the same `build_id` must give the same `output_checksum`*. R2
+holds the recipe constant except `snapshot_id` and asks whether the pipeline's
+contract survives — a different `output_checksum` there is expected, a broken
+schema is not.
+
+The captured environment (Python version, platform, library versions)
+deliberately does **not** feed the `build_id`. If it did, every machine would
+compute a different id and R1 could never compare a rebuild across machines —
+which is exactly the comparison a reader reproducing the paper makes.
+`Environment.differences()` answers the first question a mismatched checksum
+raises: did the environment move?
+
+Provenance carries lineage, so a schema breakage found in R2 can be attributed
+to the layer that introduced it:
+
+```bash
+kpx build list --layer silver
+kpx build lineage <build_id>     # bronze → silver → gold
+```
+
+```
+datasets/<dataset>/<layer>/<build_id>/
+├── provenance.json
+└── …the artifact files…
+```
+
+Keying the directory by `build_id` means two builds of the same recipe land in
+the same place, so an R1 repeat is a comparison rather than an accumulation of
+directories.
+
 ## Development
 
 ```bash
