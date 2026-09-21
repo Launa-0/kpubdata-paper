@@ -15,6 +15,9 @@ experiments/
 ├── src/kpx/              # the harness package
 │   ├── contract.py       # condition-runner contract  ← read this first
 │   ├── steps.py          # transformation step recording
+│   ├── snapshot.py       # frozen source snapshots
+│   ├── provenance.py     # build recipe, result digest, lineage
+│   ├── results.py        # result schema and store
 │   ├── metrics/          # quality / code_metrics / runtime / reproducibility
 │   └── tasks/            # task01_price_analysis … task04_bike
 ├── tests/
@@ -130,6 +133,56 @@ silently.
 
 A snapshot records its data's own `period` separately from `retrieved_at`: a
 pull made in March 2026 may cover 2020–2024, and Table 1 needs both.
+
+## Results
+
+Every run appends one row to `results/experiment_results.parquet`, and Tables
+1–5 and Figures 1–5 are regenerated from that file alone. A reader who never
+runs the pipeline sees only this file, so it has to be trustworthy by itself.
+
+```python
+store = default_store()
+store.append(ResultRow(
+    run_id="task01/silver/seed0/r0",
+    task="task01",
+    dataset="seoul-apartment-trades",
+    condition="silver",
+    source_snapshot="seoul-apartment-trades/20260315-4f2a91c0d3b7",
+    pipeline_version="0.1.0",
+    rows=234_114, runtime_seconds=1.25,
+    preprocessing_loc=18, function_count=3, transformation_steps=4,
+    output_hash=output_digest(result),
+))
+
+store.query(task="task01")                    # rows for one task; failures hidden
+store.by_condition("runtime_seconds")         # the task × condition table
+```
+
+A CSV mirror is written beside the parquet on every append: parquet is
+authoritative, the CSV is what gives a committed result a readable diff.
+
+### Missing-value rules
+
+A metric that does not apply must be **absent, not zero** — `0.0` enters a mean,
+missing does not. Validation therefore distinguishes three requirement levels:
+
+| Level | Fields | Rule |
+| :--- | :--- | :--- |
+| `identity` | `run_id`, `task`, `dataset`, `condition`, `seed`, `source_snapshot`, `pipeline_version`, `status` | always present and non-null |
+| `measured` | `rows`, `runtime_seconds`, `preprocessing_loc`, `function_count`, `transformation_steps`, `output_hash` | non-null whenever `status == "ok"` |
+| `optional` | `peak_memory_mb`, `missing_rate`, `duplicate_rate`, `schema_validity`, `join_matching_rate`, `mae`, `rmse` | may be missing — not applicable to this task, or not measurable here |
+
+`mae`/`rmse` are task02's, `join_matching_rate` is task03's; `peak_memory_mb` is
+optional because not every platform can measure it.
+
+A failed run is still recorded, as `status="failed"` with whatever was measured
+before it failed. Dropping failures would make the results file describe a more
+successful experiment than the one that was run — and `query` hides them by
+default so they cannot reach a figure by accident.
+
+`seed` is in the schema although the plan's field list omits it: a run is keyed
+by `(task, condition, snapshot_id, pipeline_version, seed)`, and task02 runs
+five seeds per condition, which would otherwise be five indistinguishable rows.
 
 ## Build provenance
 
