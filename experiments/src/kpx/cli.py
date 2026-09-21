@@ -3,12 +3,14 @@
 from __future__ import annotations
 
 import argparse
+import json
 import sys
 from collections.abc import Sequence
 from pathlib import Path
 
 from kpx import __version__
 from kpx.contract import CONDITIONS, LAYERS
+from kpx.metrics.runtime import MEASURED_RUNS, WARMUP_RUNS, describe_environment
 from kpx.provenance import ProvenanceError, ProvenanceStore
 from kpx.snapshot import SnapshotError, SnapshotStore, default_store
 
@@ -28,6 +30,16 @@ def _cmd_info(args: argparse.Namespace) -> int:
     print(f"layers:     {', '.join(LAYERS)}")
     print(f"snapshots:  {_store(args).root}")
     print(f"datasets:   {_builds(args).root}")
+    print(f"protocol:   {WARMUP_RUNS} warm-up + {MEASURED_RUNS} measured runs")
+    return 0
+
+
+def _cmd_env(args: argparse.Namespace) -> int:
+    environment = describe_environment()
+    if args.json:
+        print(json.dumps(environment.to_json(), indent=2, sort_keys=True))
+    else:
+        print(environment.to_markdown())
     return 0
 
 
@@ -108,6 +120,10 @@ def build_parser() -> argparse.ArgumentParser:
     sub = parser.add_subparsers(dest="command", required=True)
 
     sub.add_parser("info", help="print harness configuration").set_defaults(func=_cmd_info)
+
+    env = sub.add_parser("env", help="print the measurement environment for Methodology")
+    env.add_argument("--json", action="store_true", help="emit JSON instead of the markdown block")
+    env.set_defaults(func=_cmd_env)
 
     snapshot = sub.add_parser("snapshot", help="inspect frozen source snapshots")
     snapshot_sub = snapshot.add_subparsers(dest="snapshot_command", required=True)

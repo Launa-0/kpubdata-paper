@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 from datetime import datetime
 from pathlib import Path
 
@@ -32,6 +33,24 @@ def test_info_lists_conditions_and_layers(capsys: pytest.CaptureFixture[str]) ->
     out = capsys.readouterr().out
     assert "monolithic" in out
     assert "gold" in out
+
+
+def test_info_states_the_measurement_protocol(capsys: pytest.CaptureFixture[str]) -> None:
+    assert main(["info"]) == 0
+    assert "1 warm-up + 5 measured runs" in capsys.readouterr().out
+
+
+def test_env_prints_the_methodology_block(capsys: pytest.CaptureFixture[str]) -> None:
+    assert main(["env"]) == 0
+    out = capsys.readouterr().out
+    assert "- Python:" in out
+    assert "pandas" in out
+
+
+def test_env_json_is_machine_readable(capsys: pytest.CaptureFixture[str]) -> None:
+    assert main(["env", "--json"]) == 0
+    payload = json.loads(capsys.readouterr().out)
+    assert payload["packages"]["pandas"]
 
 
 def test_version_flag(capsys: pytest.CaptureFixture[str]) -> None:
