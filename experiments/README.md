@@ -17,6 +17,7 @@ experiments/
 │   ├── steps.py          # transformation step recording
 │   ├── baseline.py       # monolithic baseline equivalence checks
 │   ├── snapshot.py       # frozen source snapshots
+│   ├── pipeline.py       # pipeline version: the code + the config
 │   ├── provenance.py     # build recipe, result digest, lineage
 │   ├── results.py        # result schema and store
 │   ├── metrics/          # quality / code_metrics / runtime / reproducibility
@@ -262,6 +263,46 @@ the same shape as `snapshots/`, for the same reason.
 Keying the directory by `build_id` means two builds of the same recipe land in
 the same place, so an R1 repeat is a comparison rather than an accumulation of
 directories.
+
+## Pipeline version
+
+`BuildInputs.pipeline_version` is one citable string, and this is what produces
+it:
+
+```
+pipeline_version = <builder_version>+<config_hash[:12]>
+                   ^ the code           ^ the configuration
+```
+
+It moves if either half moves. The component versions are kept beside it,
+because a reader debugging a mismatch needs to know *which* half moved.
+
+The config hash is taken over canonical JSON: keys sorted, so a config assembled
+in another order hashes the same, and `Path` values written POSIX-style, so a
+config naming a directory does not hash differently on Windows — the same defect
+that made snapshot ids platform-dependent, reached through another door. `NaN`
+is refused rather than hashed.
+
+```python
+assert_same_pipeline(builds)   # R2's precondition, checked rather than assumed
+```
+
+R2 varies the source across T1/T2/T3 and concludes the pipeline is stable under
+that variation. That only follows if the pipeline itself did not move.
+
+**What the builder records today.** `kpubdata-builder`'s `BuildManifest` carries
+`build_id`, timings, inputs, outputs, warnings, errors and `row_counts` — and no
+version fields at all. The package defines `__version__` but never writes it
+into the manifest. So `from_build_manifest` takes the versions from its caller,
+else from a `build_environment` object if a future manifest grows one, else
+leaves them `unknown`; `PipelineVersion.is_complete` says which happened. A
+version column reading `unknown` is honest, and a guessed one would silently
+weaken every claim resting on it. Teaching the builder to stamp its own version
+belongs with the Bronze export work (issue #2).
+
+The harness never imports `kpubdata_builder`. Manifests are consumed as plain
+data, which is what lets a reader verify a published artifact without installing
+the builder.
 
 ## Measuring analytical effort
 

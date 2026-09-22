@@ -20,6 +20,9 @@ reproducing the paper makes. The environment is recorded so that a cross-machine
 difference in ``output_checksum`` can be *explained* rather than prevented from
 being observed.
 
+The config half of the recipe is hashed by :func:`kpx.pipeline.config_hash`,
+re-exported here so that recipe construction reads from one place.
+
 Provenance also carries lineage. Silver names the Bronze build it came from and
 Gold names the Silver build, so a schema breakage found in R2 can be traced to
 the layer that introduced it.
@@ -31,7 +34,6 @@ import hashlib
 import json
 import platform
 import sys
-from collections.abc import Mapping
 from dataclasses import asdict, dataclass
 from datetime import datetime
 from importlib import metadata
@@ -40,6 +42,7 @@ from typing import Any
 
 from kpx.contract import LAYERS, Layer
 from kpx.digest import digest_tree
+from kpx.pipeline import config_hash
 
 PROVENANCE_FILENAME = "provenance.json"
 SCHEMA_VERSION = 1
@@ -51,17 +54,6 @@ TRACKED_PACKAGES = ("pandas", "pyarrow", "numpy", "scikit-learn", "scipy", "kpub
 
 class ProvenanceError(RuntimeError):
     """Raised when provenance is missing, malformed, or internally inconsistent."""
-
-
-def config_hash(config: Mapping[str, Any]) -> str:
-    """Hash a transformation config canonically.
-
-    Keys are sorted and separators fixed, so a config that differs only in key
-    order or whitespace hashes the same. Two builds whose configs hash alike are
-    the same recipe; the build_id depends on this being true.
-    """
-    canonical = json.dumps(config, sort_keys=True, separators=(",", ":"), ensure_ascii=False)
-    return hashlib.sha256(canonical.encode("utf-8")).hexdigest()
 
 
 @dataclass(frozen=True)
@@ -332,3 +324,16 @@ class ProvenanceStore:
             chain.append(provenance)
             current = provenance.inputs.upstream_build_id
         return list(reversed(chain))
+
+
+__all__ = [
+    "BuildInputs",
+    "Environment",
+    "PROVENANCE_FILENAME",
+    "Provenance",
+    "ProvenanceError",
+    "ProvenanceStore",
+    "TRACKED_PACKAGES",
+    "config_hash",
+    "record_build",
+]
