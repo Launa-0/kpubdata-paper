@@ -20,6 +20,9 @@ reproducing the paper makes. The environment is recorded so that a cross-machine
 difference in ``output_checksum`` can be *explained* rather than prevented from
 being observed.
 
+The config half of the recipe is hashed by :func:`kpx.pipeline.config_hash`,
+re-exported here so that recipe construction reads from one place.
+
 Provenance also carries lineage. Silver names the Bronze build it came from and
 Gold names the Silver build, so a schema breakage found in R2 can be traced to
 the layer that introduced it.
@@ -31,7 +34,6 @@ import hashlib
 import json
 import platform
 import sys
-from collections.abc import Mapping
 from dataclasses import asdict, dataclass
 from datetime import datetime
 from importlib import metadata
@@ -40,6 +42,7 @@ from typing import Any
 
 from kpx.contract import LAYERS, Layer
 from kpx.digest import digest_tree
+from kpx.pipeline import config_hash
 
 PROVENANCE_FILENAME = "provenance.json"
 SCHEMA_VERSION = 1
@@ -51,17 +54,6 @@ TRACKED_PACKAGES = ("pandas", "pyarrow", "numpy", "scikit-learn", "scipy", "kpub
 
 class ProvenanceError(RuntimeError):
     """Raised when provenance is missing, malformed, or internally inconsistent."""
-
-
-def config_hash(config: Mapping[str, Any]) -> str:
-    """Hash a transformation config canonically.
-
-    Keys are sorted and separators fixed, so a config that differs only in key
-    order or whitespace hashes the same. Two builds whose configs hash alike are
-    the same recipe; the build_id depends on this being true.
-    """
-    canonical = json.dumps(config, sort_keys=True, separators=(",", ":"), ensure_ascii=False)
-    return hashlib.sha256(canonical.encode("utf-8")).hexdigest()
 
 
 @dataclass(frozen=True)
@@ -146,7 +138,23 @@ class BuildInputs:
 
 @dataclass(frozen=True)
 class Provenance:
-    """A completed build: its recipe, its result, and where it ran."""
+    """A completed build: its recipe, its result, and where it ran.
+
+    This record, not ``experiment_results.parquet``, is where builds are
+    counted. R1 (same snapshot rebuilt) and R2 (pipeline held constant across
+    snapshots) both measure builds, and everything they measure is already a
+    field here: ``status`` for build success rate, ``output_checksum`` for
+    SHA-256 equality, ``row_count`` for row loss, ``columns`` for schema
+    compatibility, ``output_size_bytes`` for storage amplification, and
+    :meth:`ProvenanceStore.lineage` to attribute a breakage to the layer that
+    introduced it.
+
+    ``status`` is therefore a build outcome and keeps a wider vocabulary than
+    the result schema's three run outcomes — R2 reports *which* kind of
+    breakage occurred, so collapsing ``schema_breakage`` into ``failed`` here
+    would throw away its finding. The two never have to be reconciled because
+    ``status`` does not cross into the result schema; see :attr:`run_fields`.
+    """
 
     build_id: str
     inputs: BuildInputs
@@ -169,14 +177,36 @@ class Provenance:
             )
 
     @property
-    def result_row(self) -> dict[str, Any]:
-        """The provenance fields carried into the experiment result schema."""
+    def run_fields(self) -> dict[str, Any]:
+        """What a task run inherits from the build it read.
+
+        Only the two fields that identify the build. Everything else a build
+        knows about itself stays here, because a build is not a run: R1 and R2
+        repeat *builds*, which have no task, no condition and no seed, and those
+        are identity fields in the result schema. Counting builds in
+        ``experiment_results.parquet`` would mean inventing values for all three.
+
+        Three fields deliberately do **not** cross this boundary:
+
+        ``row_count``
+            the rows in this layer. The result schema's ``rows`` is the rows in
+            the *prepared analysis input*, which is smaller and differs by
+            condition — filtering is part of what preparation costs. Passing the
+            layer's count would erase exactly the difference Table 4 reports.
+        ``output_checksum``
+            the digest of these layer bytes, which is build determinism. The
+            result schema's ``output_hash`` is the digest of the analytical
+            result, which is analysis determinism; ``results.output_digest``
+            computes it.
+        ``status``
+            how the *build* ended, in a wider vocabulary than a run's
+            (see the class docstring). R2 needs to tell one kind of breakage
+            from another; the result schema needs to know whether a run
+            produced numbers.
+        """
         return {
             "source_snapshot": self.inputs.snapshot_id,
             "pipeline_version": self.inputs.pipeline_version,
-            "rows": self.row_count,
-            "output_hash": self.output_checksum,
-            "status": self.status,
         }
 
     def to_json(self) -> dict[str, Any]:
@@ -211,7 +241,13 @@ def record_build(
     status: str = "ok",
     environment: Environment | None = None,
 ) -> Provenance:
-    """Digest a freshly built artifact and describe the build that made it."""
+    """Digest a freshly built artifact and describe the build that made it.
+
+    ``artifact`` is the build's ``data/`` directory — the bytes alone, without
+    the ``provenance.json`` that is written beside it. ``provenance.json`` stays
+    excluded from the digest anyway, so that a store laid out some other way
+    still cannot hash a build's own record into its ``output_checksum``.
+    """
     from kpx import __version__
 
     digest = digest_tree(Path(artifact), exclude=frozenset({PROVENANCE_FILENAME, ".DS_Store"}))
@@ -236,13 +272,21 @@ class ProvenanceStore:
     Layout::
 
         datasets/<dataset>/<layer>/<build_id>/
-        ├── provenance.json
-        └── …the artifact files…
+        ├── provenance.json     # the record; committed
+        └── data/               # the artifact bytes; git-ignored
+
+    The split mirrors the snapshot layout (``metadata.json`` + ``source/``) and
+    exists for the same reason: the bytes are large and are republished
+    separately, but the record has to survive in the repository. A reader who
+    never reruns the pipeline still needs the ``build_id`` and
+    ``output_checksum`` that R1 compares, and the lineage chain R2 walks.
 
     Keying the directory by ``build_id`` means two builds of the same recipe
     land in the same place, which is what makes an R1 repeat a comparison
     against the previous result rather than an accumulation of directories.
     """
+
+    DATA_DIRNAME = "data"
 
     def __init__(self, root: Path | str) -> None:
         self.root = Path(root)
@@ -252,6 +296,20 @@ class ProvenanceStore:
 
     def directory_for(self, provenance: Provenance) -> Path:
         return self.directory(
+            provenance.inputs.dataset, provenance.inputs.layer, provenance.build_id
+        )
+
+    def data_directory(self, dataset: str, layer: Layer, build_id: str) -> Path:
+        """Where a build writes its artifact bytes.
+
+        Separate from the build directory so that ``.gitignore`` can exclude the
+        bytes without excluding the record beside them — a directory git ignores
+        cannot have individual files rescued back out of it.
+        """
+        return self.directory(dataset, layer, build_id) / self.DATA_DIRNAME
+
+    def data_directory_for(self, provenance: Provenance) -> Path:
+        return self.data_directory(
             provenance.inputs.dataset, provenance.inputs.layer, provenance.build_id
         )
 
@@ -304,3 +362,16 @@ class ProvenanceStore:
             chain.append(provenance)
             current = provenance.inputs.upstream_build_id
         return list(reversed(chain))
+
+
+__all__ = [
+    "BuildInputs",
+    "Environment",
+    "PROVENANCE_FILENAME",
+    "Provenance",
+    "ProvenanceError",
+    "ProvenanceStore",
+    "TRACKED_PACKAGES",
+    "config_hash",
+    "record_build",
+]
