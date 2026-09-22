@@ -16,9 +16,9 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 
 import pandas as pd  # noqa: E402
 from _paths import DEFAULT_WORK_ROOT, SNAPSHOTS, snapshot_source  # noqa: E402
+
 from kpx.datasets import LayerStore  # noqa: E402
 from kpx.runner import run_condition  # noqa: E402
-
 from kpx.tasks.task01_price_analysis import TASK  # noqa: E402
 from kpx.tasks.task01_price_analysis import transforms as tf  # noqa: E402
 
