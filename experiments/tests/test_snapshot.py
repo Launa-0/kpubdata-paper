@@ -5,7 +5,13 @@ from pathlib import Path
 
 import pytest
 
-from kpx.snapshot import Snapshot, SnapshotError, SnapshotStore
+from kpx.snapshot import (
+    Snapshot,
+    SnapshotError,
+    SnapshotStore,
+    scan_jsonl,
+    table1,
+)
 
 RETRIEVED = datetime(2026, 3, 15, 9, 30)
 
@@ -179,3 +185,64 @@ def test_newer_metadata_version_is_refused_rather_than_partially_read() -> None:
                 "metadata_schema_version": 99,
             }
         )
+
+
+class TestScanJsonl:
+    """A snapshot's row count and schema are read from the bytes, not typed in.
+
+    Registering by hand means row_count and columns are whatever the person
+    typed, and a typo there is invisible — it lands in Table 1 as fact.
+    """
+
+    def test_counts_rows_across_every_jsonl_file(self, tmp_path: Path) -> None:
+        source = tmp_path / "pull"
+        source.mkdir()
+        (source / "a.jsonl").write_text('{"x": 1}\n{"x": 2}\n', encoding="utf-8")
+        (source / "b.jsonl").write_text('{"x": 3}\n', encoding="utf-8")
+
+        assert scan_jsonl(source).row_count == 3
+
+    def test_columns_are_the_union_over_records_not_the_first_record(
+        self, tmp_path: Path
+    ) -> None:
+        source = tmp_path / "pull"
+        source.mkdir()
+        (source / "a.jsonl").write_text(
+            '{"aptNm": "x"}\n{"aptNm": "y", "cdealDay": "12"}\n', encoding="utf-8"
+        )
+
+        assert scan_jsonl(source).columns == ("aptNm", "cdealDay")
+
+    def test_blank_lines_are_not_rows(self, tmp_path: Path) -> None:
+        source = tmp_path / "pull"
+        source.mkdir()
+        (source / "a.jsonl").write_text('{"x": 1}\n\n{"x": 2}\n', encoding="utf-8")
+
+        assert scan_jsonl(source).row_count == 2
+
+    def test_a_source_with_no_jsonl_is_an_error(self, tmp_path: Path) -> None:
+        source = tmp_path / "pull"
+        source.mkdir()
+        (source / "a.csv").write_text("x\n1\n", encoding="utf-8")
+
+        with pytest.raises(SnapshotError, match="no .jsonl"):
+            scan_jsonl(source)
+
+
+class TestTable1:
+    def test_one_row_per_snapshot_with_the_columns_the_paper_prints(
+        self, store: SnapshotStore, source: Path
+    ) -> None:
+        register(store, source)
+
+        frame = table1(store.list_snapshots())
+
+        assert list(frame.columns) == ["Dataset", "Rows", "Columns", "Period", "Size", "Snapshot"]
+        assert frame.loc[0, "Rows"] == 234_512
+
+    def test_sizes_are_human_readable_not_raw_bytes(
+        self, store: SnapshotStore, source: Path
+    ) -> None:
+        register(store, source)
+
+        assert table1(store.list_snapshots()).loc[0, "Size"].endswith("MiB")
