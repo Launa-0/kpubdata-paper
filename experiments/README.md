@@ -23,7 +23,7 @@ experiments/
 │   ├── metrics/          # quality / code_metrics / runtime / reproducibility
 │   └── tasks/            # task01_price_analysis … task04_bike
 ├── tests/
-├── datasets/             # built dataset artifacts (git-ignored)
+├── datasets/             # built dataset artifacts (bytes git-ignored, provenance committed)
 ├── snapshots/            # frozen source snapshots + metadata
 ├── results/              # experiment_results.parquet (committed)
 └── figures/              # generated figures (committed)
@@ -34,9 +34,13 @@ are subpackages of `kpx` instead, so that the harness is importable and
 installable rather than a collection of loose scripts — `metrics/quality.py` in
 the plan is `src/kpx/metrics/quality.py` here.
 
-`datasets/` is ignored by git because the artifacts are large and republished on
-Hugging Face. `results/` and `figures/` are **not** ignored: they are what makes
-the benchmark reproducible for a reader who does not rerun the pipeline.
+A built dataset is split the same way a snapshot is: the artifact bytes under
+`datasets/<dataset>/<layer>/<build_id>/data/` are ignored by git because they are
+large and republished on Hugging Face, while the `provenance.json` beside them is
+committed. `results/` and `figures/` are **not** ignored either. All three are what
+makes the benchmark reproducible for a reader who does not rerun the pipeline —
+without the committed provenance there is no `build_id` or `output_checksum` for
+that reader to compare R1 against, and no lineage chain for R2 to walk.
 
 ## Conditions
 
@@ -248,9 +252,13 @@ kpx build lineage <build_id>     # bronze → silver → gold
 
 ```
 datasets/<dataset>/<layer>/<build_id>/
-├── provenance.json
-└── …the artifact files…
+├── provenance.json     # the record; committed
+└── data/               # the artifact bytes; git-ignored, republished separately
 ```
+
+The record sits outside `data/` rather than beside the artifact files, because
+git cannot rescue an individual file back out of a directory it ignores. It is
+the same shape as `snapshots/`, for the same reason.
 
 Keying the directory by `build_id` means two builds of the same recipe land in
 the same place, so an R1 repeat is a comparison rather than an accumulation of
