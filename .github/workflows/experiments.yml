@@ -9,7 +9,15 @@ on:
 
 jobs:
   check:
-    runs-on: ubuntu-latest
+    # Windows is in the matrix because the snapshot digest is built from path
+    # strings, and how a path is spelled differs by platform. That class of bug
+    # is invisible on a single runner and breaks reproducibility for exactly the
+    # readers the published artifact is for.
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest]
     defaults:
       run:
         working-directory: experiments
