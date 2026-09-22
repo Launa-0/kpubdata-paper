@@ -22,7 +22,7 @@ experiments/
 │   ├── metrics/          # quality / code_metrics / runtime / reproducibility
 │   └── tasks/            # task01_price_analysis … task04_bike
 ├── tests/
-├── datasets/             # built dataset artifacts (git-ignored)
+├── datasets/             # built artifacts (ignored) + provenance.json (committed)
 ├── snapshots/            # frozen source snapshots + metadata
 ├── results/              # experiment_results.parquet (committed)
 └── figures/              # generated figures (committed)
@@ -33,9 +33,10 @@ are subpackages of `kpx` instead, so that the harness is importable and
 installable rather than a collection of loose scripts — `metrics/quality.py` in
 the plan is `src/kpx/metrics/quality.py` here.
 
-`datasets/` is ignored by git because the artifacts are large and republished on
-Hugging Face. `results/` and `figures/` are **not** ignored: they are what makes
-the benchmark reproducible for a reader who does not rerun the pipeline.
+The built artifacts under `datasets/` are ignored by git because they are large
+and republished on Hugging Face; each build's `provenance.json` is committed.
+`results/` and `figures/` are not ignored either. All three are what makes the
+benchmark reproducible for a reader who does not rerun the pipeline.
 
 ## Conditions
 
@@ -247,13 +248,19 @@ kpx build lineage <build_id>     # bronze → silver → gold
 
 ```
 datasets/<dataset>/<layer>/<build_id>/
-├── provenance.json
-└── …the artifact files…
+├── provenance.json     # the build record; committed
+└── …the artifact files…    # git-ignored, republished separately
 ```
 
 Keying the directory by `build_id` means two builds of the same recipe land in
 the same place, so an R1 repeat is a comparison rather than an accumulation of
 directories.
+
+`provenance.json` is committed, like a snapshot's `metadata.json`, and for the
+same reason: a reader who does not rerun the pipeline still has to be able to
+check R1's claim that a given `build_id` produced a given `output_checksum`, and
+to walk the lineage a schema breakage is attributed to. The artifact bytes
+themselves are large and are republished.
 
 ## Measuring analytical effort
 

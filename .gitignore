@@ -72,6 +72,11 @@ desktop.ini
 # 스냅샷은 metadata.json만 커밋하고 원본 바이트는 별도 공개한다.
 experiments/snapshots/*/*/source/
 !experiments/snapshots/**/metadata.json
-# 빌드된 데이터셋 artifact는 크기 때문에 커밋하지 않는다 (Hugging Face로 공개)
+# 빌드된 데이터셋 artifact는 크기 때문에 커밋하지 않고 (Hugging Face로 공개),
+# 어떤 레시피가 만들었는지 기록한 provenance.json만 커밋한다.
+# 두 번째 줄이 필요한 이유: git은 제외된 "디렉터리" 안의 파일을 !로 되살릴 수 없다.
+# 디렉터리를 먼저 되살려야 그 안의 provenance.json 규칙이 적용된다.
 experiments/datasets/**
+!experiments/datasets/**/
+!experiments/datasets/**/provenance.json
 !experiments/datasets/.gitkeep
