@@ -266,6 +266,40 @@ def test_round_trips_through_the_store(artifact: Path, tmp_path: Path) -> None:
     assert store.load("seoul-apartment-trades", "bronze", provenance.build_id) == provenance
 
 
+def test_artifact_bytes_live_under_the_record_not_beside_it(tmp_path: Path) -> None:
+    """The bytes go in ``data/`` so git can exclude them and keep the record.
+
+    A directory git ignores cannot have individual files rescued back out of it,
+    so ``provenance.json`` has to sit outside whatever gets ignored.
+    """
+    store = ProvenanceStore(tmp_path / "datasets")
+    build = store.directory("seoul-apartment-trades", "bronze", "a1b2c3d4e5f60718")
+    data = store.data_directory("seoul-apartment-trades", "bronze", "a1b2c3d4e5f60718")
+    assert data.parent == build
+    assert data.name == "data"
+
+
+def test_the_record_is_written_outside_the_data_directory(artifact: Path, tmp_path: Path) -> None:
+    store = ProvenanceStore(tmp_path / "datasets")
+    provenance = record_build(artifact, inputs=bronze_inputs(), row_count=1, columns=["a"])
+    path = store.write(provenance)
+    assert path.parent == store.directory_for(provenance)
+    assert store.DATA_DIRNAME not in path.parts
+
+
+def test_finding_a_build_is_unaffected_by_the_data_directory(
+    artifact: Path, tmp_path: Path
+) -> None:
+    """``find``/``list_builds`` glob for the record, which did not move."""
+    store = ProvenanceStore(tmp_path / "datasets")
+    provenance = record_build(artifact, inputs=bronze_inputs(), row_count=1, columns=["a"])
+    store.write(provenance)
+    store.data_directory_for(provenance).mkdir(parents=True)
+    (store.data_directory_for(provenance) / "data.parquet").write_bytes(b"canonical rows")
+    assert store.find(provenance.build_id) == provenance
+    assert store.list_builds() == [provenance]
+
+
 def test_rebuilding_the_same_recipe_lands_in_the_same_place(artifact: Path, tmp_path: Path) -> None:
     """An R1 repeat compares against the previous result, not a new directory."""
     store = ProvenanceStore(tmp_path / "datasets")

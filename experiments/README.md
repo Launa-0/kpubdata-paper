@@ -17,12 +17,13 @@ experiments/
 │   ├── steps.py          # transformation step recording
 │   ├── baseline.py       # monolithic baseline equivalence checks
 │   ├── snapshot.py       # frozen source snapshots
+│   ├── pipeline.py       # pipeline version: the code + the config
 │   ├── provenance.py     # build recipe, result digest, lineage
 │   ├── results.py        # result schema and store
 │   ├── metrics/          # quality / code_metrics / runtime / reproducibility
 │   └── tasks/            # task01_price_analysis … task04_bike
 ├── tests/
-├── datasets/             # built dataset artifacts (git-ignored)
+├── datasets/             # built dataset artifacts (bytes git-ignored, provenance committed)
 ├── snapshots/            # frozen source snapshots + metadata
 ├── results/              # experiment_results.parquet (committed)
 └── figures/              # generated figures (committed)
@@ -33,9 +34,13 @@ are subpackages of `kpx` instead, so that the harness is importable and
 installable rather than a collection of loose scripts — `metrics/quality.py` in
 the plan is `src/kpx/metrics/quality.py` here.
 
-`datasets/` is ignored by git because the artifacts are large and republished on
-Hugging Face. `results/` and `figures/` are **not** ignored: they are what makes
-the benchmark reproducible for a reader who does not rerun the pipeline.
+A built dataset is split the same way a snapshot is: the artifact bytes under
+`datasets/<dataset>/<layer>/<build_id>/data/` are ignored by git because they are
+large and republished on Hugging Face, while the `provenance.json` beside them is
+committed. `results/` and `figures/` are **not** ignored either. All three are what
+makes the benchmark reproducible for a reader who does not rerun the pipeline —
+without the committed provenance there is no `build_id` or `output_checksum` for
+that reader to compare R1 against, and no lineage chain for R2 to walk.
 
 ## Conditions
 
@@ -286,13 +291,57 @@ kpx build lineage <build_id>     # bronze → silver → gold
 
 ```
 datasets/<dataset>/<layer>/<build_id>/
-├── provenance.json
-└── …the artifact files…
+├── provenance.json     # the record; committed
+└── data/               # the artifact bytes; git-ignored, republished separately
 ```
+
+The record sits outside `data/` rather than beside the artifact files, because
+git cannot rescue an individual file back out of a directory it ignores. It is
+the same shape as `snapshots/`, for the same reason.
 
 Keying the directory by `build_id` means two builds of the same recipe land in
 the same place, so an R1 repeat is a comparison rather than an accumulation of
 directories.
+
+## Pipeline version
+
+`BuildInputs.pipeline_version` is one citable string, and this is what produces
+it:
+
+```
+pipeline_version = <builder_version>+<config_hash[:12]>
+                   ^ the code           ^ the configuration
+```
+
+It moves if either half moves. The component versions are kept beside it,
+because a reader debugging a mismatch needs to know *which* half moved.
+
+The config hash is taken over canonical JSON: keys sorted, so a config assembled
+in another order hashes the same, and `Path` values written POSIX-style, so a
+config naming a directory does not hash differently on Windows — the same defect
+that made snapshot ids platform-dependent, reached through another door. `NaN`
+is refused rather than hashed.
+
+```python
+assert_same_pipeline(builds)   # R2's precondition, checked rather than assumed
+```
+
+R2 varies the source across T1/T2/T3 and concludes the pipeline is stable under
+that variation. That only follows if the pipeline itself did not move.
+
+**What the builder records today.** `kpubdata-builder`'s `BuildManifest` carries
+`build_id`, timings, inputs, outputs, warnings, errors and `row_counts` — and no
+version fields at all. The package defines `__version__` but never writes it
+into the manifest. So `from_build_manifest` takes the versions from its caller,
+else from a `build_environment` object if a future manifest grows one, else
+leaves them `unknown`; `PipelineVersion.is_complete` says which happened. A
+version column reading `unknown` is honest, and a guessed one would silently
+weaken every claim resting on it. Teaching the builder to stamp its own version
+belongs with the Bronze export work (issue #2).
+
+The harness never imports `kpubdata_builder`. Manifests are consumed as plain
+data, which is what lets a reader verify a published artifact without installing
+the builder.
 
 ## Measuring analytical effort
 
