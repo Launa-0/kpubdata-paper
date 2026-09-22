@@ -173,20 +173,54 @@ def test_tampered_build_id_is_refused(artifact: Path) -> None:
         Provenance.from_json(payload)
 
 
-def test_result_row_carries_the_result_schema_fields(artifact: Path) -> None:
-    row = record_build(
+def test_run_fields_carry_only_what_identifies_the_build(artifact: Path) -> None:
+    fields = record_build(
         artifact, inputs=bronze_inputs(), row_count=234_512, columns=["a"]
-    ).result_row
-    assert set(row) == {"source_snapshot", "pipeline_version", "rows", "output_hash", "status"}
-    assert row["source_snapshot"] == bronze_inputs().snapshot_id
+    ).run_fields
+    assert set(fields) == {"source_snapshot", "pipeline_version"}
+    assert fields["source_snapshot"] == bronze_inputs().snapshot_id
+
+
+def test_the_layers_row_count_is_not_offered_as_the_runs(artifact: Path) -> None:
+    """``rows`` is the prepared analysis input, which is the run's to measure.
+
+    Handing over the layer's count would give every condition reading Silver the
+    same number, erasing the filtering that is part of what preparation costs.
+    """
+    provenance = record_build(artifact, inputs=bronze_inputs(), row_count=234_512, columns=["a"])
+    assert provenance.row_count == 234_512
+    assert "rows" not in provenance.run_fields
+
+
+def test_the_builds_checksum_is_not_offered_as_the_runs_output_hash(artifact: Path) -> None:
+    """Build determinism and analysis determinism are different claims."""
+    provenance = record_build(artifact, inputs=bronze_inputs(), row_count=1, columns=["a"])
+    assert provenance.output_checksum
+    assert "output_hash" not in provenance.run_fields
 
 
 def test_failed_build_is_recordable(artifact: Path) -> None:
-    """R2 counts build success rate, so a failure needs a row too."""
+    """R2 counts build success rate here, so a failure needs a record too."""
     provenance = record_build(
         artifact, inputs=bronze_inputs(), row_count=0, columns=[], status="schema_breakage"
     )
-    assert provenance.result_row["status"] == "schema_breakage"
+    assert provenance.status == "schema_breakage"
+
+
+def test_build_status_does_not_reach_the_result_schema(artifact: Path) -> None:
+    """The two vocabularies never have to be reconciled because they never meet.
+
+    ``schema_breakage`` is a build outcome R2 reports; the result schema accepts
+    only run outcomes. Passing it across would make recording a failed build
+    fail, which is precisely the count R2 is trying to keep.
+    """
+    from kpx.results import STATUSES
+
+    provenance = record_build(
+        artifact, inputs=bronze_inputs(), row_count=0, columns=[], status="schema_breakage"
+    )
+    assert provenance.status not in STATUSES
+    assert "status" not in provenance.run_fields
 
 
 # -- the store --------------------------------------------------------------
