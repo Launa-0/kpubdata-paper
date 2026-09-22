@@ -20,6 +20,7 @@ experiments/
 │   ├── pipeline.py       # pipeline version: the code + the config
 │   ├── provenance.py     # build recipe, result digest, lineage
 │   ├── results.py        # result schema and store
+│   ├── stats.py          # paired comparison, effect size, CI
 │   ├── metrics/          # quality / code_metrics / runtime / reproducibility
 │   └── tasks/            # task01_price_analysis … task04_bike
 ├── tests/
@@ -482,6 +483,32 @@ format, not validity.
 
 Table 2's `Improvement` column is signed so **positive always means better**,
 whichever direction the underlying metric runs.
+## Statistical analysis
+
+Comparisons are paired — same task, same snapshot, same seed, differing only in
+condition. The test is chosen by a rule fixed before any result exists; see
+[`docs/statistics.md`](docs/statistics.md) for it and the Statistical Conclusion
+Validity draft it feeds.
+
+```python
+comparisons = holm(compare_conditions(results, "runtime_seconds", task="task02"))
+summary_table(comparisons)
+```
+
+**The sample size is worth knowing about before reading any p-value.** The
+design gives 5 paired observations, and at n = 5 a two-sided Wilcoxon
+signed-rank test **cannot** return p < 0.05 — there are only 2⁵ sign
+assignments, so its smallest attainable p-value is 0.0625. The paired t-test has
+no such floor: the same five pairs reach p ≈ 0.013 through it.
+
+So at this n, whether a comparison can attain significance at all is decided by
+the normality test rather than by the size of the effect. `significance_reachable`
+is therefore computed and carried in the table, every comparison reports Cohen's
+dₙ, the rank-biserial correlation, a confidence interval and the raw paired
+values, and **six seeds instead of five** would lift the floor below 0.05 (#14).
+
+Requires the `analysis` extra (`scipy`).
+
 ## Development
 
 ```bash
