@@ -138,7 +138,23 @@ class BuildInputs:
 
 @dataclass(frozen=True)
 class Provenance:
-    """A completed build: its recipe, its result, and where it ran."""
+    """A completed build: its recipe, its result, and where it ran.
+
+    This record, not ``experiment_results.parquet``, is where builds are
+    counted. R1 (same snapshot rebuilt) and R2 (pipeline held constant across
+    snapshots) both measure builds, and everything they measure is already a
+    field here: ``status`` for build success rate, ``output_checksum`` for
+    SHA-256 equality, ``row_count`` for row loss, ``columns`` for schema
+    compatibility, ``output_size_bytes`` for storage amplification, and
+    :meth:`ProvenanceStore.lineage` to attribute a breakage to the layer that
+    introduced it.
+
+    ``status`` is therefore a build outcome and keeps a wider vocabulary than
+    the result schema's three run outcomes — R2 reports *which* kind of
+    breakage occurred, so collapsing ``schema_breakage`` into ``failed`` here
+    would throw away its finding. The two never have to be reconciled because
+    ``status`` does not cross into the result schema; see :attr:`run_fields`.
+    """
 
     build_id: str
     inputs: BuildInputs
@@ -161,14 +177,36 @@ class Provenance:
             )
 
     @property
-    def result_row(self) -> dict[str, Any]:
-        """The provenance fields carried into the experiment result schema."""
+    def run_fields(self) -> dict[str, Any]:
+        """What a task run inherits from the build it read.
+
+        Only the two fields that identify the build. Everything else a build
+        knows about itself stays here, because a build is not a run: R1 and R2
+        repeat *builds*, which have no task, no condition and no seed, and those
+        are identity fields in the result schema. Counting builds in
+        ``experiment_results.parquet`` would mean inventing values for all three.
+
+        Three fields deliberately do **not** cross this boundary:
+
+        ``row_count``
+            the rows in this layer. The result schema's ``rows`` is the rows in
+            the *prepared analysis input*, which is smaller and differs by
+            condition — filtering is part of what preparation costs. Passing the
+            layer's count would erase exactly the difference Table 4 reports.
+        ``output_checksum``
+            the digest of these layer bytes, which is build determinism. The
+            result schema's ``output_hash`` is the digest of the analytical
+            result, which is analysis determinism; ``results.output_digest``
+            computes it.
+        ``status``
+            how the *build* ended, in a wider vocabulary than a run's
+            (see the class docstring). R2 needs to tell one kind of breakage
+            from another; the result schema needs to know whether a run
+            produced numbers.
+        """
         return {
             "source_snapshot": self.inputs.snapshot_id,
             "pipeline_version": self.inputs.pipeline_version,
-            "rows": self.row_count,
-            "output_hash": self.output_checksum,
-            "status": self.status,
         }
 
     def to_json(self) -> dict[str, Any]:

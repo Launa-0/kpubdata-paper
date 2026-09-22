@@ -235,6 +235,45 @@ holds the recipe constant except `snapshot_id` and asks whether the pipeline's
 contract survives — a different `output_checksum` there is expected, a broken
 schema is not.
 
+### Builds are counted here, runs are counted in the results file
+
+A build is not a run. R1 repeats a build and R2 repeats it against a moving
+snapshot; neither has a `task`, a `condition` or a `seed`, and all three are
+identity fields in the result schema. So builds are counted in the provenance
+store and runs in `experiment_results.parquet`, and everything R1 and R2 measure
+is already a provenance field:
+
+| measurement | field |
+| :--- | :--- |
+| build success rate (R1, R2) | `status` |
+| output equality (R1) | `output_checksum` |
+| row loss (R1, R2) | `row_count` |
+| schema compatibility (R1, R2) | `columns` |
+| storage amplification | `output_size_bytes` |
+| breakage attribution (R2) | `lineage()` |
+
+The two stores keep separate `status` vocabularies on purpose:
+
+| | values | means |
+| :--- | :--- | :--- |
+| `Provenance.status` | open; `ok`, `schema_breakage`, … | how the **build** ended |
+| result schema `status` | closed; `ok`, `failed`, `skipped` | how the **run** ended |
+
+R2 reports *which* kind of breakage occurred, so collapsing `schema_breakage`
+into `failed` would throw away its finding. They never have to be reconciled
+because `status` does not cross between them — `Provenance.run_fields` carries
+only `source_snapshot` and `pipeline_version`, the two fields that say which
+build a run read.
+
+`rows` and `output_hash` do not cross either, and for a sharper reason: the
+provenance record and the result schema use those names for different things.
+A layer's `row_count` is not the run's `rows` — the result schema means the rows
+in the *prepared analysis input*, and filtering rows is part of what preparation
+costs, so handing over the layer's count would erase the between-condition
+difference Table 4 exists to show. A layer's `output_checksum` is not the run's
+`output_hash` either: one is build determinism, the other analysis determinism,
+and `results.output_digest()` computes the second.
+
 The captured environment (Python version, platform, library versions)
 deliberately does **not** feed the `build_id`. If it did, every machine would
 compute a different id and R1 could never compare a rebuild across machines —
