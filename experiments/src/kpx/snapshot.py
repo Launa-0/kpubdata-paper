@@ -28,10 +28,10 @@ from __future__ import annotations
 
 import json
 import shutil
+from collections.abc import Sequence
 from dataclasses import asdict, dataclass
 from datetime import date, datetime
 from pathlib import Path
-from collections.abc import Sequence
 from typing import Any
 
 import pandas as pd
