@@ -4,11 +4,10 @@ import json
 from datetime import datetime
 from pathlib import Path
 
+import pandas as pd
 import pytest
 
 from kpx.cli import main
-import pandas as pd
-
 from kpx.snapshot import SnapshotStore
 
 

@@ -30,8 +30,11 @@ class Runner:
                 district_code=frame["sggCd"].map(parse_district_code),
                 price_10k_krw=frame["dealAmount"].map(parse_price_10k),
                 area_m2=frame["excluUseAr"].map(parse_area_m2),
+                # pandas-stubs의 assign은 값에 None이 섞인 리스트를 받지 않는다고
+                # 보지만, 결측을 None으로 두는 것이 여기서 맞다 — 아래 dropna가
+                # 그 행을 걸러낸다.
                 year_month=[
-                    to_year_month(year, month)
+                    to_year_month(year, month)  # type: ignore[misc]
                     for year, month in zip(frame["dealYear"], frame["dealMonth"], strict=True)
                 ],
             )

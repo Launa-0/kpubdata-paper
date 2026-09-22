@@ -202,9 +202,7 @@ class TestScanJsonl:
 
         assert scan_jsonl(source).row_count == 3
 
-    def test_columns_are_the_union_over_records_not_the_first_record(
-        self, tmp_path: Path
-    ) -> None:
+    def test_columns_are_the_union_over_records_not_the_first_record(self, tmp_path: Path) -> None:
         source = tmp_path / "pull"
         source.mkdir()
         (source / "a.jsonl").write_text(
