@@ -22,13 +22,19 @@ from kpx.contract import (
     condition_layer,
 )
 from kpx.digest import FileEntry, TreeDigest, digest_tree, file_sha256
+from kpx.pipeline import (
+    PipelineError,
+    PipelineVersion,
+    assert_same_pipeline,
+    canonical_config,
+    config_hash,
+)
 from kpx.provenance import (
     BuildInputs,
     Environment,
     Provenance,
     ProvenanceError,
     ProvenanceStore,
-    config_hash,
     record_build,
 )
 from kpx.snapshot import Snapshot, SnapshotError, SnapshotStore, VerifyResult, default_store
@@ -46,6 +52,8 @@ __all__ = [
     "Environment",
     "FileEntry",
     "Layer",
+    "PipelineError",
+    "PipelineVersion",
     "Provenance",
     "ProvenanceError",
     "ProvenanceStore",
@@ -57,6 +65,8 @@ __all__ = [
     "StepRecorder",
     "TreeDigest",
     "VerifyResult",
+    "assert_same_pipeline",
+    "canonical_config",
     "condition_layer",
     "config_hash",
     "default_store",
