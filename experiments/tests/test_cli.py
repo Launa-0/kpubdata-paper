@@ -7,6 +7,8 @@ from pathlib import Path
 import pytest
 
 from kpx.cli import main
+import pandas as pd
+
 from kpx.snapshot import SnapshotStore
 
 
@@ -180,3 +182,92 @@ def test_unknown_build_exits_with_an_error(
     code = main(["--datasets", str(datasets), "build", "lineage", "0000000000000000"])
     assert code == 2
     assert "error:" in capsys.readouterr().err
+
+
+class TestSnapshotRegister:
+    """Registering is a command, not a throwaway script.
+
+    A snapshot registered by an ad-hoc script is a snapshot whose row count and
+    collector version are whatever that copy of the script happened to say.
+    """
+
+    @pytest.fixture
+    def pull(self, tmp_path: Path) -> Path:
+        source = tmp_path / "pull"
+        source.mkdir()
+        (source / "raw_records.jsonl").write_text(
+            '{"aptNm": "x", "dealAmount": "120,000"}\n{"aptNm": "y"}\n', encoding="utf-8"
+        )
+        return source
+
+    def _register(self, pull: Path, root: Path, *extra: str) -> int:
+        return main(
+            [
+                "--snapshots",
+                str(root),
+                "snapshot",
+                "register",
+                str(pull),
+                "--dataset",
+                "seoul-apartment-trades",
+                "--source-url",
+                "https://example.invalid/api",
+                "--schema-version",
+                "rtms-apt-trade-v1",
+                *extra,
+            ]
+        )
+
+    def test_row_count_and_columns_come_from_the_bytes(
+        self, tmp_path: Path, pull: Path, capsys: pytest.CaptureFixture[str]
+    ) -> None:
+        root = tmp_path / "snapshots"
+
+        assert self._register(pull, root) == 0
+
+        registered = SnapshotStore(root).list_snapshots()[0]
+        assert registered.row_count == 2
+        assert registered.columns == ("aptNm", "dealAmount")
+        assert registered.snapshot_id in capsys.readouterr().out
+
+    def test_collector_version_is_recorded(self, tmp_path: Path, pull: Path) -> None:
+        root = tmp_path / "snapshots"
+
+        self._register(pull, root, "--collector", "kpubdata 0.5.0")
+
+        assert SnapshotStore(root).list_snapshots()[0].builder_version == "kpubdata 0.5.0"
+
+    def test_period_is_recorded_when_given(self, tmp_path: Path, pull: Path) -> None:
+        root = tmp_path / "snapshots"
+
+        self._register(pull, root, "--period", "2020-01", "2024-12")
+
+        assert SnapshotStore(root).list_snapshots()[0].period == ("2020-01", "2024-12")
+
+    def test_registering_bytes_without_jsonl_fails_instead_of_writing_metadata(
+        self, tmp_path: Path
+    ) -> None:
+        root = tmp_path / "snapshots"
+        source = tmp_path / "pull"
+        source.mkdir()
+        (source / "records.csv").write_text("aptNm\nx\n", encoding="utf-8")
+
+        assert self._register(source, root) == 2
+        assert SnapshotStore(root).list_snapshots() == []
+
+
+class TestSchemaCommand:
+    def test_prints_one_line_per_column_of_a_built_artifact(
+        self, tmp_path: Path, capsys: pytest.CaptureFixture[str]
+    ) -> None:
+        path = tmp_path / "trades.parquet"
+        pd.DataFrame({"district_code": ["11110"], "price_10k_krw": [120_000]}).to_parquet(path)
+
+        assert main(["schema", str(path)]) == 0
+
+        out = capsys.readouterr().out
+        assert "district_code" in out
+        assert "price_10k_krw" in out
+
+    def test_a_missing_artifact_is_an_error_not_a_traceback(self, tmp_path: Path) -> None:
+        assert main(["schema", str(tmp_path / "absent.parquet")]) == 2

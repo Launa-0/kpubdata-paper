@@ -10,9 +10,10 @@ from pathlib import Path
 
 from kpx import __version__
 from kpx.contract import CONDITIONS, LAYERS
+from kpx.datasets import DatasetNotBuilt, read_artifact, schema_report
 from kpx.metrics.runtime import MEASURED_RUNS, WARMUP_RUNS, describe_environment
 from kpx.provenance import ProvenanceError, ProvenanceStore
-from kpx.snapshot import SnapshotError, SnapshotStore, default_store
+from kpx.snapshot import SnapshotError, SnapshotStore, default_store, scan_jsonl
 
 
 def _store(args: argparse.Namespace) -> SnapshotStore:
@@ -40,6 +41,34 @@ def _cmd_env(args: argparse.Namespace) -> int:
         print(json.dumps(environment.to_json(), indent=2, sort_keys=True))
     else:
         print(environment.to_markdown())
+    return 0
+
+
+def _cmd_schema(args: argparse.Namespace) -> int:
+    if not args.artifact.exists():
+        raise DatasetNotBuilt(f"no artifact at {args.artifact}")
+    report = schema_report(read_artifact(args.artifact))
+    report["Non-null"] = report["Non-null"].map("{:.1%}".format)
+    print(report.to_string(index=False))
+    return 0
+
+
+def _cmd_snapshot_register(args: argparse.Namespace) -> int:
+    scan = scan_jsonl(args.source)
+    snapshot = _store(args).register(
+        args.source,
+        dataset=args.dataset,
+        source_url=args.source_url,
+        row_count=scan.row_count,
+        columns=scan.columns,
+        data_schema_version=args.schema_version,
+        period=tuple(args.period) if args.period else None,
+        builder_version=args.collector,
+        notes=args.notes,
+    )
+    print(snapshot.snapshot_id)
+    print(f"rows={snapshot.row_count:,}  cols={snapshot.column_count}")
+    print(f"sha256={snapshot.checksum}")
     return 0
 
 
@@ -125,8 +154,35 @@ def build_parser() -> argparse.ArgumentParser:
     env.add_argument("--json", action="store_true", help="emit JSON instead of the markdown block")
     env.set_defaults(func=_cmd_env)
 
+    schema = sub.add_parser("schema", help="print a built artifact's schema for the paper")
+    schema.add_argument("artifact", type=Path, help="path to a .parquet or .jsonl artifact")
+    schema.set_defaults(func=_cmd_schema)
+
     snapshot = sub.add_parser("snapshot", help="inspect frozen source snapshots")
     snapshot_sub = snapshot.add_subparsers(dest="snapshot_command", required=True)
+
+    register = snapshot_sub.add_parser(
+        "register", help="freeze a pull into the store and write its metadata"
+    )
+    register.add_argument("source", type=Path, help="directory holding the pulled .jsonl")
+    register.add_argument("--dataset", required=True)
+    register.add_argument("--source-url", required=True)
+    register.add_argument("--schema-version", required=True, help="the source API's schema id")
+    register.add_argument(
+        "--period",
+        nargs=2,
+        metavar=("START", "END"),
+        default=None,
+        help="the data's own coverage, e.g. 2020-01 2024-12 (not the pull date)",
+    )
+    register.add_argument(
+        "--collector",
+        default=None,
+        metavar="VERSION",
+        help="version of the client that pulled these bytes, e.g. 'kpubdata 0.5.0'",
+    )
+    register.add_argument("--notes", default="")
+    register.set_defaults(func=_cmd_snapshot_register)
 
     listing = snapshot_sub.add_parser("list", help="list registered snapshots, oldest first")
     listing.add_argument("--dataset", default=None, help="restrict to one dataset")
@@ -159,7 +215,7 @@ def main(argv: Sequence[str] | None = None) -> int:
     args = build_parser().parse_args(argv)
     try:
         exit_code: int = args.func(args)
-    except (SnapshotError, ProvenanceError) as error:
+    except (SnapshotError, ProvenanceError, DatasetNotBuilt) as error:
         print(f"error: {error}", file=sys.stderr)
         return 2
     return exit_code
