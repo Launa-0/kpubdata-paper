@@ -4,10 +4,14 @@ import json
 from datetime import datetime
 from pathlib import Path
 
+import pandas as pd
 import pytest
 
 from kpx.provenance import (
+    BUILD_STATUSES,
+    RESULT_STATUS,
     BuildInputs,
+    BuildStatus,
     Environment,
     Provenance,
     ProvenanceError,
@@ -15,6 +19,8 @@ from kpx.provenance import (
     config_hash,
     record_build,
 )
+from kpx.results import STATUSES as RESULT_STATUSES
+from kpx.results import validate
 
 BUILT_AT = datetime(2026, 3, 16, 10, 0)
 
@@ -186,7 +192,68 @@ def test_failed_build_is_recordable(artifact: Path) -> None:
     provenance = record_build(
         artifact, inputs=bronze_inputs(), row_count=0, columns=[], status="schema_breakage"
     )
-    assert provenance.result_row["status"] == "schema_breakage"
+    assert provenance.status == "schema_breakage"
+    assert provenance.result_row["status"] == "failed"
+
+
+def test_the_build_vocabulary_survives_in_the_record(artifact: Path) -> None:
+    """R2 has to tell a breakage apart from a crash; the record is where."""
+    broken = record_build(
+        artifact, inputs=bronze_inputs(), row_count=0, columns=[], status="schema_breakage"
+    )
+    crashed = record_build(
+        artifact, inputs=bronze_inputs(), row_count=0, columns=[], status="failed"
+    )
+    assert broken.status != crashed.status
+    assert broken.result_row["status"] == crashed.result_row["status"] == "failed"
+
+
+def test_an_unknown_build_status_is_refused(artifact: Path) -> None:
+    """A typo must not reach the results file as an unknown status."""
+    with pytest.raises(ProvenanceError, match="unknown build status"):
+        record_build(
+            artifact,
+            inputs=bronze_inputs(),
+            row_count=0,
+            columns=[],
+            status="broke",  # type: ignore[arg-type]
+        )
+
+
+@pytest.mark.parametrize("status", BUILD_STATUSES)
+def test_every_build_status_reaches_the_result_schema(artifact: Path, status: BuildStatus) -> None:
+    """The path this whole translation exists for, end to end.
+
+    Recording a failed build must not itself fail, or R2 cannot count the
+    failures it is measuring.
+    """
+    provenance = record_build(
+        artifact, inputs=bronze_inputs(), row_count=0, columns=["a"], status=status
+    )
+    frame = validate(
+        pd.DataFrame(
+            [
+                {
+                    "run_id": f"r-{status}",
+                    "task": "task01",
+                    "dataset": "seoul-apartment-trades",
+                    "condition": "bronze",
+                    "seed": 0,
+                    "preprocessing_loc": 0,
+                    "function_count": 0,
+                    "transformation_steps": 0,
+                    "runtime_seconds": 0.0,
+                    **provenance.result_row,
+                }
+            ]
+        )
+    )
+    assert frame.loc[0, "status"] in RESULT_STATUSES
+
+
+def test_every_build_status_has_a_translation() -> None:
+    assert set(RESULT_STATUS) == set(BUILD_STATUSES)
+    assert set(RESULT_STATUS.values()) <= set(RESULT_STATUSES)
 
 
 # -- the store --------------------------------------------------------------

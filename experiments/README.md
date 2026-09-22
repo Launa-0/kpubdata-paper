@@ -237,6 +237,26 @@ which is exactly the comparison a reader reproducing the paper makes.
 `Environment.differences()` answers the first question a mismatched checksum
 raises: did the environment move?
 
+### Two vocabularies called `status`
+
+A build and a run are different events and end in different ways.
+
+| | values | describes |
+| :--- | :--- | :--- |
+| `Provenance.status` | `ok`, `failed`, `schema_breakage` | how a **build** ended |
+| result schema `status` | `ok`, `failed`, `skipped` | how a **run** ended |
+
+`schema_breakage` is R2's finding rather than a crash: the build ran and
+produced something whose schema no longer honours the contract. R2 has to tell
+that apart from a crash, so the two vocabularies are kept separate and
+`Provenance.result_row` translates on the way out — a breakage reaches the
+results file as `failed`, and which kind of failure it was stays in the
+provenance record R2 reads.
+
+Merging them was the other option and is worse in both directions: widening the
+result schema would leave its `status` describing a build in some rows and a run
+in others, and narrowing the build vocabulary would delete what R2 measures.
+
 Provenance carries lineage, so a schema breakage found in R2 can be attributed
 to the layer that introduced it:
 

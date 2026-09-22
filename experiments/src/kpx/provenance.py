@@ -23,6 +23,22 @@ being observed.
 Provenance also carries lineage. Silver names the Bronze build it came from and
 Gold names the Silver build, so a schema breakage found in R2 can be traced to
 the layer that introduced it.
+
+Two vocabularies called ``status``
+---------------------------------
+
+A build and an experiment run are different events, and they end in different
+ways. :data:`BUILD_STATUSES` describes how a *build* ended — ``schema_breakage``
+is R2's finding, a build that ran and produced something whose schema no longer
+honours the contract. ``kpx.results`` describes how a *run* ended: ``ok``,
+``failed``, ``skipped``.
+
+They must not be merged. R2 needs to tell a breakage apart from a crash, and a
+result row whose ``status`` sometimes described a build and sometimes a run
+would mean neither. So :attr:`Provenance.status` keeps the build vocabulary,
+:attr:`Provenance.result_row` translates through :data:`RESULT_STATUS` on the
+way into the result schema, and R2 counts breakages from the provenance records
+themselves — which is why those records are committed.
 """
 
 from __future__ import annotations
@@ -36,7 +52,7 @@ from dataclasses import asdict, dataclass
 from datetime import datetime
 from importlib import metadata
 from pathlib import Path
-from typing import Any
+from typing import Any, Literal
 
 from kpx.contract import LAYERS, Layer
 from kpx.digest import digest_tree
@@ -47,6 +63,23 @@ SCHEMA_VERSION = 1
 #: Libraries whose version can change a numeric result and so must be reported
 #: in the paper's methodology section.
 TRACKED_PACKAGES = ("pandas", "pyarrow", "numpy", "scikit-learn", "scipy", "kpubdata-builder")
+
+#: How a build ended. ``schema_breakage`` is R2's finding rather than a crash:
+#: the build ran and produced something whose schema no longer honours the
+#: contract, which is the outcome R2 exists to count.
+BuildStatus = Literal["ok", "failed", "schema_breakage"]
+BUILD_STATUSES: tuple[BuildStatus, ...] = ("ok", "failed", "schema_breakage")
+
+#: A build outcome in the experiment result schema's vocabulary, which describes
+#: runs rather than builds. A breakage is a failure from a run's point of view;
+#: *which kind* of failure it was stays in the provenance record, where R2 reads
+#: it. Widening the result schema instead would leave its ``status`` column
+#: describing a build in some rows and a run in others.
+RESULT_STATUS: Mapping[BuildStatus, str] = {
+    "ok": "ok",
+    "failed": "failed",
+    "schema_breakage": "failed",
+}
 
 
 class ProvenanceError(RuntimeError):
@@ -158,7 +191,7 @@ class Provenance:
     output_size_bytes: int
     output_file_count: int
     kpx_version: str
-    status: str = "ok"
+    status: BuildStatus = "ok"
     schema_version: int = SCHEMA_VERSION
 
     def __post_init__(self) -> None:
@@ -167,16 +200,26 @@ class Provenance:
                 f"build_id {self.build_id} does not match its inputs "
                 f"(expected {self.inputs.build_id}); the record has been edited"
             )
+        if self.status not in BUILD_STATUSES:
+            raise ProvenanceError(
+                f"unknown build status: {self.status!r} (expected {', '.join(BUILD_STATUSES)})"
+            )
 
     @property
     def result_row(self) -> dict[str, Any]:
-        """The provenance fields carried into the experiment result schema."""
+        """The provenance fields carried into the experiment result schema.
+
+        ``status`` is translated on the way out: the result schema's ``status``
+        describes how a *run* ended, and it only accepts its own vocabulary. A
+        breakage reaches it as ``failed``; which kind of failure it was stays
+        here, in the record R2 reads.
+        """
         return {
             "source_snapshot": self.inputs.snapshot_id,
             "pipeline_version": self.inputs.pipeline_version,
             "rows": self.row_count,
             "output_hash": self.output_checksum,
-            "status": self.status,
+            "status": RESULT_STATUS[self.status],
         }
 
     def to_json(self) -> dict[str, Any]:
@@ -208,7 +251,7 @@ def record_build(
     row_count: int,
     columns: tuple[str, ...] | list[str],
     built_at: datetime | None = None,
-    status: str = "ok",
+    status: BuildStatus = "ok",
     environment: Environment | None = None,
 ) -> Provenance:
     """Digest a freshly built artifact and describe the build that made it."""
