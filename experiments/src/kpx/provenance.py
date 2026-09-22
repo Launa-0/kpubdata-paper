@@ -211,7 +211,13 @@ def record_build(
     status: str = "ok",
     environment: Environment | None = None,
 ) -> Provenance:
-    """Digest a freshly built artifact and describe the build that made it."""
+    """Digest a freshly built artifact and describe the build that made it.
+
+    ``artifact`` is the build's ``data/`` directory — the bytes alone, without
+    the ``provenance.json`` that is written beside it. ``provenance.json`` stays
+    excluded from the digest anyway, so that a store laid out some other way
+    still cannot hash a build's own record into its ``output_checksum``.
+    """
     from kpx import __version__
 
     digest = digest_tree(Path(artifact), exclude=frozenset({PROVENANCE_FILENAME, ".DS_Store"}))
@@ -236,13 +242,21 @@ class ProvenanceStore:
     Layout::
 
         datasets/<dataset>/<layer>/<build_id>/
-        ├── provenance.json
-        └── …the artifact files…
+        ├── provenance.json     # the record; committed
+        └── data/               # the artifact bytes; git-ignored
+
+    The split mirrors the snapshot layout (``metadata.json`` + ``source/``) and
+    exists for the same reason: the bytes are large and are republished
+    separately, but the record has to survive in the repository. A reader who
+    never reruns the pipeline still needs the ``build_id`` and
+    ``output_checksum`` that R1 compares, and the lineage chain R2 walks.
 
     Keying the directory by ``build_id`` means two builds of the same recipe
     land in the same place, which is what makes an R1 repeat a comparison
     against the previous result rather than an accumulation of directories.
     """
+
+    DATA_DIRNAME = "data"
 
     def __init__(self, root: Path | str) -> None:
         self.root = Path(root)
@@ -252,6 +266,20 @@ class ProvenanceStore:
 
     def directory_for(self, provenance: Provenance) -> Path:
         return self.directory(
+            provenance.inputs.dataset, provenance.inputs.layer, provenance.build_id
+        )
+
+    def data_directory(self, dataset: str, layer: Layer, build_id: str) -> Path:
+        """Where a build writes its artifact bytes.
+
+        Separate from the build directory so that ``.gitignore`` can exclude the
+        bytes without excluding the record beside them — a directory git ignores
+        cannot have individual files rescued back out of it.
+        """
+        return self.directory(dataset, layer, build_id) / self.DATA_DIRNAME
+
+    def data_directory_for(self, provenance: Provenance) -> Path:
+        return self.data_directory(
             provenance.inputs.dataset, provenance.inputs.layer, provenance.build_id
         )
 

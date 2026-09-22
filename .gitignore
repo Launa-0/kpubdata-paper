@@ -72,6 +72,7 @@ desktop.ini
 # 스냅샷은 metadata.json만 커밋하고 원본 바이트는 별도 공개한다.
 experiments/snapshots/*/*/source/
 !experiments/snapshots/**/metadata.json
-# 빌드된 데이터셋 artifact는 크기 때문에 커밋하지 않는다 (Hugging Face로 공개)
-experiments/datasets/**
-!experiments/datasets/.gitkeep
+# 빌드된 데이터셋은 스냅샷과 같은 모양으로 나눈다 — artifact 바이트는 크기 때문에
+# 제외하고(Hugging Face로 공개), provenance.json은 커밋한다. 파이프라인을 다시 돌리지
+# 않는 독자에게 build_id와 output_checksum이 남아야 R1/R2를 대조할 수 있다.
+experiments/datasets/*/*/*/data/
