@@ -58,9 +58,7 @@ def _task(runner: object = None, transforms: ModuleType | None = None) -> Task:
 
 
 def _resolver() -> _Resolver:
-    frame = pd.DataFrame(
-        {"district": ["11110", "11110", "11140"], "price": [100.0, 200.0, -1.0]}
-    )
+    frame = pd.DataFrame({"district": ["11110", "11110", "11140"], "price": [100.0, 200.0, -1.0]})
     return _Resolver({"silver": frame})
 
 
