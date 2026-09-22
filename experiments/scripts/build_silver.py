@@ -1,0 +1,74 @@
+"""얼린 스냅샷에서 Bronze/Silver/Gold를 빌드한다 — API를 다시 호출하지 않는다.
+
+스냅샷의 raw_records.jsonl을 로컬 upload store에 넣고 ``kind="file"`` source로
+선언한다. 이후의 모든 실험이 이 산출물 위에서 돈다.
+
+**builder 가상환경에서 실행한다** (polars 필요). harness 가상환경에는 builder가
+설치돼 있지 않다.
+"""
+
+from __future__ import annotations
+
+import argparse
+import shutil
+import sys
+import time
+from pathlib import Path
+
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+
+from _paths import add_common_arguments, snapshot_source  # noqa: E402
+from trades_spec import build_spec  # noqa: E402
+
+RUN_ID = "trades-silver-001"
+
+
+def main(argv: list[str] | None = None) -> int:
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument("snapshot_id", help="예: seoul-apartment-trades/20260922-6660c8e25162")
+    parser.add_argument("--run-id", default=RUN_ID)
+    add_common_arguments(parser)
+    args = parser.parse_args(argv)
+
+    from kpubdata_builder.pipeline import run_build
+    from kpubdata_builder.uploads.store import SQLiteUploadRepository
+
+    source = snapshot_source(args.snapshots, args.snapshot_id)
+    content = source.read_bytes()
+    print(f"스냅샷 바이트: {len(content) / 1024 / 1024:.1f} MiB", flush=True)
+
+    work_root: Path = args.work_root
+    if (work_root / "runs" / args.run_id).exists():
+        shutil.rmtree(work_root / "runs" / args.run_id)
+    work_root.mkdir(parents=True, exist_ok=True)
+
+    repository = SQLiteUploadRepository(
+        work_root / "uploads.sqlite3", max_bytes=len(content) + 1024
+    )
+    upload = repository.put(
+        "paper-experiment",
+        content=content,
+        format="jsonl",
+        encoding="utf-8",
+        original_filename="raw_records.jsonl",
+    )
+
+    started = time.time()
+    result = run_build(
+        build_spec(upload.upload_id, description="논문 실험용 Silver"),
+        client=None,
+        output_root=work_root / "runs",
+        run_id=args.run_id,
+        owner_id="paper-experiment",
+        upload_repository=repository,
+    )
+    print(f"status: {result.status}  ({time.time() - started:.1f}s)")
+    for outcome in result.outcomes:
+        print(f"  {outcome.source_key}: {outcome.status} stages={outcome.stages_completed}")
+        if outcome.error:
+            print(f"    error: {outcome.error}")
+    return 0 if result.status == "ok" else 1
+
+
+if __name__ == "__main__":
+    sys.exit(main())
