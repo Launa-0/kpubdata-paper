@@ -13,6 +13,7 @@ from kpx.pipeline import (
     assert_same_pipeline,
     canonical_config,
     config_hash,
+    transformation_recipe,
 )
 from kpx.provenance import BuildInputs, record_build
 
@@ -217,3 +218,71 @@ def test_a_pipeline_change_across_snapshots_is_refused(tmp_path: Path) -> None:
 def test_comparing_nothing_is_refused() -> None:
     with pytest.raises(PipelineError, match="no builds to compare"):
         assert_same_pipeline([])
+
+
+class TestTransformationRecipe:
+    """pipeline_version이 해시하는 것 — 선언 한 벌에서 한 번만 만들어진다.
+
+    이전에는 각 스크립트가 rename/casts/read_as 세 개만 골라 담았고, 그래서
+    ``derived``를 고쳐도 식별자가 움직이지 않았다. 허용 목록은 새 규칙이 생길 때마다
+    조용히 같은 결함을 다시 만든다.
+    """
+
+    SPEC = {
+        "dataset_id": "seoul-apartment-trades",
+        "title": "Seoul Apartment Trades",
+        "source": {
+            "kind": "file",
+            "alias": "trades",
+            "format": "jsonl",
+            "upload_id": "upl_c82eb4f2",
+        },
+        "contract": {
+            "read_as": {"sggCd": "str"},
+            "required": ("district_code",),
+            "rename": {"sggCd": "district_code"},
+            "casts": {"price_10k_krw": "int_comma"},
+            "null_tokens": (),
+            "derived": ({"name": "deal_date", "kind": "date_parts"},),
+        },
+        "exports": ({"kind": "parquet", "output_path": "trades.parquet"},),
+    }
+
+    def _hash(self, **overrides: object) -> str:
+        return config_hash(transformation_recipe({**self.SPEC, **overrides}))
+
+    def test_a_changed_transformation_rule_moves_the_hash(self) -> None:
+        for key, replacement in (
+            ("read_as", {"sggCd": "int"}),
+            ("required", ("district_code", "apt_name")),
+            ("rename", {"sggCd": "gu"}),
+            ("casts", {"price_10k_krw": "int"}),
+            ("null_tokens", ("",)),
+            ("derived", ({"name": "deal_date", "kind": "concat"},)),
+        ):
+            contract = {**self.SPEC["contract"], key: replacement}  # type: ignore[dict-item]
+
+            assert self._hash(contract=contract) != self._hash(), key
+
+    def test_the_export_format_counts_but_its_path_does_not(self) -> None:
+        assert self._hash(exports=({"kind": "csv", "output_path": "trades.parquet"},)) != (
+            self._hash()
+        )
+        assert self._hash(exports=({"kind": "parquet", "output_path": "elsewhere.parquet"},)) == (
+            self._hash()
+        )
+
+    def test_values_that_change_every_run_are_left_out(self) -> None:
+        """이것들이 들어가면 R1의 반복 빌드와 R2의 T1/T2/T3가 서로 다른 파이프라인이
+        되어 버린다 — 고치려던 것과 정반대의 고장이다."""
+        other_run = {**self.SPEC["source"], "upload_id": "upl_ffffffff"}  # type: ignore[dict-item]
+
+        assert self._hash(source=other_run) == self._hash()
+        assert self._hash(title="Something Else") == self._hash()
+        assert self._hash(description="R1 재빌드 결정성 측정") == self._hash()
+
+    def test_a_new_rule_is_in_the_identity_without_anyone_adding_it(self) -> None:
+        """거부 목록이라 기본값이 '포함'이다. 허용 목록이면 이 단언이 실패한다."""
+        contract = {**self.SPEC["contract"], "filters": ("deal_year >= 2020",)}
+
+        assert self._hash(contract=contract) != self._hash()

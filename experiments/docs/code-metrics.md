@@ -16,16 +16,26 @@ Two failure modes make a bare line count worthless:
 
 So four numbers are reported together, and the boundary is declared in advance.
 
-| Metric | What it is | Role |
-| :--- | :--- | :--- |
-| `preprocessing_loc` | effective lines of `prepare` and the private helpers it calls | primary |
-| `function_count` | distinct named transformations the preparation invokes | primary |
-| `transformation_steps` | top-level `ctx.step(...)` blocks recorded at run time | primary |
-| `cyclomatic_complexity` | summed over the measured functions | secondary |
+| Metric | What it is | Role | Paper label |
+| :--- | :--- | :--- | :--- |
+| `preprocessing_loc` | effective lines of `prepare` and the private helpers it calls | **primary** | Preprocessing LOC |
+| `function_count` | distinct named transformations the preparation invokes | **primary** | Transformation functions |
+| `transformation_steps` | top-level `ctx.step(...)` blocks recorded at run time | diagnostic | Instrumented preparation stages |
+| `cyclomatic_complexity` | summed over the measured functions | diagnostic | — |
 
-`cyclomatic_complexity` is reported but not argued from. It is there so a reader
-can see that a condition with fewer lines did not buy them with denser control
-flow.
+Two kinds of number are reported together and argued from differently.
+
+**Implementation effort** — `preprocessing_loc` and `function_count`. Both are
+derived from the source by AST, so the author cannot move them by writing the
+same work differently.
+
+**Execution cost** — `runtime_seconds` and `peak_memory_mb` from
+[`metrics/runtime.py`](../src/kpx/metrics/runtime.py).
+
+**Diagnostic only** — `transformation_steps` and `cyclomatic_complexity` are
+reported but not argued from. Complexity is there so a reader can see that a
+condition with fewer lines did not buy them with denser control flow. For steps,
+see [Why steps are diagnostic](#why-steps-are-diagnostic).
 
 ## The preprocessing / analysis boundary
 
@@ -105,10 +115,53 @@ with ctx.step("parse_price"):
     df["price_krw"] = df["거래금액"].map(parse_price)
 ```
 
-A loop that normalizes twelve columns is one logical transformation however it
-is written, and only a runtime record gets that right. Nested steps are not
-counted, so the number reflects logical transformations rather than
-implementation detail. See [runner-contract.md](runner-contract.md).
+Nested steps are not counted. See [runner-contract.md](runner-contract.md).
+
+## Why steps are diagnostic
+
+This metric was declared primary before the tasks were written. It is being
+**demoted to diagnostic after the numbers were seen**, which this document's own
+rule forbids doing to a measurement. The demotion is recorded here rather than
+applied silently, and no recorded number changes: every condition keeps the step
+count it produced.
+
+The defect is that the rule does not determine the number. It permits a step to
+bracket any amount of sub-work:
+
+> A logical transformation such as `normalize_columns` stays one step however
+> many sub-operations it brackets internally.
+
+So the same preparation can be recorded as one step or as seven, and both comply.
+Task 1 produced exactly that:
+
+| Condition | `function_count` | `preprocessing_loc` | `transformation_steps` |
+| :--- | ---: | ---: | ---: |
+| bronze | 6 | 20 | 7 |
+| monolithic | 6 | 16 | 1 |
+
+Bronze and monolithic invoke **the same six transformation functions** — the
+Baseline Bias convention requires it ([monolithic-baseline.md](monolithic-baseline.md)) —
+and their line counts are close. Only the declared step count differs, by a
+factor of seven, because the monolithic runner brackets its work in one block.
+That is the bracketing the rule allows, not a misapplication of it.
+
+A metric that the author sets by choosing where to put `with` statements cannot
+carry a cross-condition claim about effort. The AST-derived metrics can, and they
+say these two conditions cost about the same to write — which is the expected
+result, since the baseline reuses the same helpers by design.
+
+What the step record is still good for: the per-step time breakdown, and a
+readable trace of what each condition actually did. Those are what it was built
+for in the runner contract, and they stay.
+
+**Not done, deliberately:** monolithic was not re-annotated into seven steps, and
+it was not excluded from the table. Re-annotating would move a number in the
+direction that favours H2 after seeing it; excluding one condition after seeing
+its value is post-hoc selection. Reporting the number and declining to argue from
+it is the change that does not touch the data.
+
+This paragraph is the source of the corresponding note in Threats to Validity
+(#25).
 
 ## Usage
 
