@@ -222,6 +222,16 @@ def main(argv: list[str] | None = None) -> int:
                 ]
             ).to_string(index=False, na_rep="—")
         )
+        # duplicate_rate는 key 없이 전체 행으로 센다. 두 계층의 컬럼 집합이 다르면
+        # 계층 간 차이를 그대로 품질 변화로 읽을 수 없다 — 컬럼이 줄어드는 것만으로도
+        # 중복은 늘 수 있다. 진단값이라는 사실을 표 옆에 적어 둔다. 표만 보는 사람에게
+        # docstring은 닿지 않는다.
+        if bronze.shape[1] != silver.shape[1]:
+            print(
+                f"     [!] duplicate_rate는 진단값이다 — 전체 행으로 세는데 Bronze "
+                f"{bronze.shape[1]}컬럼 / Silver {silver.shape[1]}컬럼으로 잣대가 다르다. "
+                "차이는 레코드 쌍을 직접 확인하고 해석한다."
+            )
 
         b_cols = per_column(bronze, b_spec)
         s_cols = per_column(silver, s_spec)

@@ -211,6 +211,15 @@ def duplicate_rate(frame: pd.DataFrame, key: tuple[str, ...] = ()) -> float:
     reading: two trades that agree on every recorded field may still be two
     genuine trades, so the number is reported as *duplicate records*, never
     silently deduplicated.
+
+    This is a **diagnostic** metric, not a paired one. Bronze and Silver do not
+    hold the same columns — Silver may coalesce aliases away or add derived
+    fields — so a whole-row rate is not computed against the same yardstick on
+    both sides, and narrowing the columns can raise it on its own. Read a change
+    in this number by inspecting the record pairs behind it, never from the
+    aggregate alone. Every such change observed so far turned out to be
+    canonicalization exposing duplicates the source already held, but that is a
+    finding each time, not something the rate says by itself.
     """
     if frame.empty:
         raise QualityError("cannot measure duplicates in an empty frame")
