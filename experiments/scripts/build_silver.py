@@ -18,6 +18,7 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
+import _builder_identity  # noqa: E402
 from _paths import add_common_arguments, snapshot_source  # noqa: E402
 
 # 데이터셋마다 Silver 계약이 다르다. 같은 기관의 같은 계열 API인데도 컬럼명 규칙과
@@ -68,6 +69,12 @@ def main(argv: list[str] | None = None) -> int:
         owner_id="paper-experiment",
         upload_repository=repository,
     )
+    # 어느 빌더 코드가 이 산출물을 만들었는지 옆에 남긴다. 패키지 버전만으로는
+    # 식별되지 않는다 — _builder_identity 참조.
+    identity = _builder_identity.write(work_root / "runs" / args.run_id)
+    print(f"builder: {_builder_identity.as_version(identity)}")
+    if identity["git_dirty"]:
+        print("  [!] 작업 트리가 커밋과 다르다 — 최종 실험에는 쓰지 마라")
     print(f"status: {result.status}  ({time.time() - started:.1f}s)")
     for outcome in result.outcomes:
         print(f"  {outcome.source_key}: {outcome.status} stages={outcome.stages_completed}")

@@ -337,6 +337,7 @@ def record_layer_chain(
     alias: str,
     store: ProvenanceStore,
     dataset: str | None = None,
+    builder_version: str | None = None,
     layers: Sequence[Layer] = ("bronze", "silver"),
 ) -> dict[Layer, Provenance]:
     """Record one builder run as a chain of layer builds.
@@ -346,6 +347,12 @@ def record_layer_chain(
     and R2 rest on: each layer names the build it was derived from, so
     :meth:`ProvenanceStore.lineage` can walk a Gold build back to the snapshot
     it came from.
+
+    ``builder_version`` overrides what the manifest reports. The manifest's value
+    comes from the installed distribution's metadata, which goes stale under an
+    editable install — three earlier builds recorded ``0.1.0`` for code whose
+    package actually declared ``0.4.0.dev0``. A caller that knows the builder's
+    git commit should pass it; ``scripts/_builder_identity.py`` produces one.
 
     Takes the :class:`~kpx.snapshot.Snapshot` rather than its id, because Bronze
     is described by the frozen pull and not by the manifest — see
@@ -369,7 +376,7 @@ def record_layer_chain(
         raise ProvenanceError(f"no build manifest at {manifest_path}")
 
     manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
-    version = PipelineVersion.from_build_manifest(manifest, config)
+    version = PipelineVersion.from_build_manifest(manifest, config, builder_version=builder_version)
     environment = version.build_environment()
     status = str(manifest.get("status", "unknown"))
     canonical_rows = int((manifest.get("row_counts") or {}).get(alias, 0))

@@ -19,6 +19,7 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
+import _builder_identity  # noqa: E402
 from _paths import DEFAULT_WORK_ROOT, SNAPSHOTS  # noqa: E402
 
 from kpx.pipeline import record_layer_chain, transformation_recipe  # noqa: E402
@@ -50,12 +51,21 @@ def main(argv: list[str] | None = None) -> int:
     # 스냅샷 기록을 넘긴다 — Bronze의 컬럼은 manifest가 아니라 얼린 원천이 답한다.
     snapshot = SnapshotStore(args.snapshots).load(args.snapshot_id)
 
+    # 빌더의 코드 신원. 없으면 manifest의 값으로 돌아가되, 그 값은 editable 설치에서
+    # 낡을 수 있다 — 기존 빌드 세 건이 실제로 그랬다.
+    identity = _builder_identity.read(args.work_root / "runs" / run_id)
+    if identity is None:
+        print("[!] builder_identity.json이 없다 — manifest의 버전을 쓴다(신뢰도 낮음)")
+    elif identity["git_dirty"]:
+        print("[!] dirty 트리에서 빌드됐다 — 최종 실험에는 쓰지 마라")
+
     recorded = record_layer_chain(
         args.work_root / "runs" / run_id,
         snapshot=snapshot,
         config=transformation_recipe(spec),
         alias=spec["source"]["alias"],
         store=ProvenanceStore(root),
+        builder_version=_builder_identity.as_version(identity),
     )
 
     for layer, provenance in recorded.items():
