@@ -125,6 +125,33 @@ RESULT_SCHEMA: tuple[Field, ...] = (
     ),
     Field("mae", "Float64", "optional", "task02 only: mean absolute error", minimum=0.0),
     Field("rmse", "Float64", "optional", "task02 only: root mean squared error", minimum=0.0),
+    # Agreement with a published statistic, never called a ground truth (#6).
+    # All three are optional because which of them a reference supports depends
+    # on what it publishes: an index has no APD, and a task with no reference
+    # has none of them.
+    Field(
+        "reference_apd",
+        "Float64",
+        "optional",
+        "mean absolute % deviation from the reference level; absent for an index",
+        minimum=0.0,
+    ),
+    Field(
+        "reference_trend_correlation",
+        "Float64",
+        "optional",
+        "Pearson r of period-over-period changes vs the reference",
+        minimum=-1.0,
+        maximum=1.0,
+    ),
+    Field(
+        "reference_direction_agreement",
+        "Float64",
+        "optional",
+        "share of changes moving the same way as the reference",
+        minimum=0.0,
+        maximum=1.0,
+    ),
 )
 
 FIELDS: dict[str, Field] = {field.name: field for field in RESULT_SCHEMA}
@@ -166,6 +193,9 @@ class ResultRow:
     join_matching_rate: float | None = None
     mae: float | None = None
     rmse: float | None = None
+    reference_apd: float | None = None
+    reference_trend_correlation: float | None = None
+    reference_direction_agreement: float | None = None
 
     def to_dict(self) -> dict[str, Any]:
         return asdict(self)

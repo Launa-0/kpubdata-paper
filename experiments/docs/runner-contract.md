@@ -80,14 +80,20 @@ with ctx.step("normalize_district"):
     ...
 ```
 
-This yields an objective count, a per-step time breakdown, and a readable trace
-of what each condition actually had to do — the qualitative material for the
-Results section.
+This yields a per-step time breakdown and a readable trace of what each condition
+actually had to do — the qualitative material for the Results section.
 
-Steps may nest; only top-level steps are counted. A logical transformation such
-as `normalize_columns` stays one step however many sub-operations it brackets
-internally, so the count reflects logical transformations rather than
-implementation detail.
+Steps may nest; only top-level steps are counted. A step may bracket any amount
+of sub-work: `normalize_columns` stays one step however many sub-operations it
+performs internally.
+
+**The count is therefore declared, not derived.** The same preparation can be
+recorded as one step or as several, and both follow this rule. That makes the
+number useful for reading a single condition's trace and useless for comparing
+effort across conditions, so it is a diagnostic rather than a primary metric —
+see [code-metrics.md](code-metrics.md#why-steps-are-diagnostic). Cross-condition
+effort is argued from `preprocessing_loc` and `function_count`, which are derived
+from the source.
 
 Recording survives failure: a step that raises is still recorded, so a condition
 that fails partway reports how far it got.
