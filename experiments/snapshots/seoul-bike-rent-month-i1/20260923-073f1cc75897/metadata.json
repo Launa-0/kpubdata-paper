@@ -1,0 +1,31 @@
+{
+  "builder_version": "ingest_bike.py",
+  "checksum": "073f1cc7589717b88638d58f4509b90f6202d20c584fcd913bd8ad99e869892a",
+  "columns": [
+    "대여구분코드",
+    "대여소명",
+    "대여소번호",
+    "대여일자",
+    "성별",
+    "연령대코드",
+    "운동량",
+    "이용거리(M)",
+    "이용건수",
+    "이용시간(본)",
+    "탄소량"
+  ],
+  "data_schema_version": "seoul.bike_rent_month/OA-15249.I1",
+  "dataset": "seoul-bike-rent-month-i1",
+  "file_count": 2,
+  "metadata_schema_version": 1,
+  "notes": "I1. 배포 CSV를 파일별 인코딩으로 decode해 들였다 — source/ingest_manifest.json 참조.",
+  "period": [
+    "2021-09",
+    "2021-09"
+  ],
+  "retrieved_at": "2026-09-23T21:31:56.741374+09:00",
+  "row_count": 128413,
+  "size_bytes": 40230146,
+  "snapshot_id": "seoul-bike-rent-month-i1/20260923-073f1cc75897",
+  "source_url": "https://data.seoul.go.kr/dataList/OA-15249/F/1/datasetView.do"
+}

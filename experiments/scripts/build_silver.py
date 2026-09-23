@@ -23,7 +23,7 @@ from _paths import add_common_arguments, snapshot_source  # noqa: E402
 
 # 데이터셋마다 Silver 계약이 다르다. 같은 기관의 같은 계열 API인데도 컬럼명 규칙과
 # 금액 표현이 다르다 — 그 차이가 T3(통합)에서 Bronze 조건이 치르는 비용이다.
-SPECS = {"trades": "trades_spec", "rent": "rent_spec"}
+SPECS = {"trades": "trades_spec", "rent": "rent_spec", "bike": "bike_spec"}
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -37,8 +37,8 @@ def main(argv: list[str] | None = None) -> int:
     build_spec = importlib.import_module(SPECS[args.spec]).build_spec
     args.run_id = args.run_id or f"{args.spec}-silver-001"
 
+    from _upload_store import FileUploadRepository
     from kpubdata_builder.pipeline import run_build
-    from kpubdata_builder.uploads.store import SQLiteUploadRepository
 
     source = snapshot_source(args.snapshots, args.snapshot_id)
     content = source.read_bytes()
@@ -49,9 +49,9 @@ def main(argv: list[str] | None = None) -> int:
         shutil.rmtree(work_root / "runs" / args.run_id)
     work_root.mkdir(parents=True, exist_ok=True)
 
-    repository = SQLiteUploadRepository(
-        work_root / "uploads.sqlite3", max_bytes=len(content) + 1024
-    )
+    # 빌더의 SQLite store는 SQLITE_MAX_LENGTH(약 953 MiB)에서 막힌다 — T4 통합본
+    # 1,444 MiB가 빌드 시작 전에 걸렸다. _upload_store 참조.
+    repository = FileUploadRepository(work_root / "uploads")
     upload = repository.put(
         "paper-experiment",
         content=content,
