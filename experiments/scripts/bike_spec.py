@@ -46,6 +46,11 @@ SPEC: dict[str, Any] = {
     "dataset_id": DATASET_ID,
     "title": "Seoul Public Bicycle Monthly Usage",
     "source": {"kind": "file", "alias": ALIAS, "format": "jsonl"},
+    # 논문의 숫자를 만드는 빌드. 이름 규칙으로 추측하지 않는다 — 같은 dataset_id
+    # 아래 폐기한 스냅샷이 남아 있을 수 있고, 어느 것을 쟀는지는 추측이 아니라
+    # 선언이어야 한다. recipe에는 들어가지 않는다(RUN_SCOPED_KEYS).
+    "snapshot_id": "seoul-bike-rent-month/20260923-637ec21bb5b1",
+    "run_id": "bike-t4-silver",
     "contract": {
         # 결측을 빈 값이 아니라 문자열 \N으로 적는다. 캐스팅 전에 null로 모으지
         # 않으면 수치 컬럼에서 #188의 data-loss 가드가 빌드를 세운다.

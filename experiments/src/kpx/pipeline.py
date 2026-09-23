@@ -78,7 +78,19 @@ UNKNOWN = "unknown"
 #: would make R1's repeated builds and R2's T1/T2/T3 look like different
 #: pipelines, which is the opposite failure.
 RUN_SCOPED_KEYS = frozenset(
-    {"upload_id", "title", "description", "metadata", "publish", "output_path"}
+    {
+        "upload_id",
+        "title",
+        "description",
+        "metadata",
+        "publish",
+        "output_path",
+        # 어느 스냅샷을 어느 런 디렉터리에 빌드했는지는 변환 결과를 정하지
+        # 않는다. recipe에 넣으면 같은 계약이 원천마다 다른 config_hash를
+        # 갖게 되어, 세대를 가로질러 계약이 같다는 주장을 스스로 지운다.
+        "snapshot_id",
+        "run_id",
+    }
 )
 
 
