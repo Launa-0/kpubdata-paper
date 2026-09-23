@@ -1,0 +1,31 @@
+{
+  "builder_version": "ingest_bike.py",
+  "checksum": "ba6abb36ac55a1abf6476cebcb7d2bd1727bd2d43cf6c7582ecf8ea76e51e4ac",
+  "columns": [
+    "대여구분코드",
+    "대여소명",
+    "대여소번호",
+    "대여일자",
+    "성별",
+    "연령대코드",
+    "운동량",
+    "이동거리(M)",
+    "이용건수",
+    "이용시간(분)",
+    "탄소량"
+  ],
+  "data_schema_version": "seoul.bike_rent_month/OA-15249.G2",
+  "dataset": "seoul-bike-rent-month-g2",
+  "file_count": 2,
+  "metadata_schema_version": 1,
+  "notes": "G2 (2020-06~2022-12, 2021-09 제외). 내부에 2022-01과 202207 표기가 섞여 있다 — 쪼개지 않는다. source/ingest_manifest.json 참조.",
+  "period": [
+    "2020-06",
+    "2022-12"
+  ],
+  "retrieved_at": "2026-09-23T21:35:54.497108+09:00",
+  "row_count": 3200206,
+  "size_bytes": 991516392,
+  "snapshot_id": "seoul-bike-rent-month-g2/20260923-ba6abb36ac55",
+  "source_url": "https://data.seoul.go.kr/dataList/OA-15249/F/1/datasetView.do"
+}

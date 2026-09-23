@@ -26,7 +26,7 @@ from kpx.pipeline import record_layer_chain, transformation_recipe  # noqa: E402
 from kpx.provenance import ProvenanceStore  # noqa: E402
 from kpx.snapshot import SnapshotStore  # noqa: E402
 
-SPECS = {"trades": "trades_spec", "rent": "rent_spec"}
+SPECS = {"trades": "trades_spec", "rent": "rent_spec", "bike": "bike_spec"}
 
 
 def main(argv: list[str] | None = None) -> int:
