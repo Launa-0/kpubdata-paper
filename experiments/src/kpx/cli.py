@@ -13,7 +13,12 @@ from kpx.contract import CONDITIONS, LAYERS
 from kpx.datasets import DatasetNotBuilt, read_artifact, schema_report
 from kpx.metrics.runtime import MEASURED_RUNS, WARMUP_RUNS, describe_environment
 from kpx.provenance import ProvenanceError, ProvenanceStore
+from kpx.results import default_store as default_result_store
 from kpx.snapshot import SnapshotError, SnapshotStore, default_store, scan_jsonl
+
+
+class RunError(RuntimeError):
+    """Raised when `kpx run` is asked for something it cannot do."""
 
 
 def _store(args: argparse.Namespace) -> SnapshotStore:
@@ -23,6 +28,52 @@ def _store(args: argparse.Namespace) -> SnapshotStore:
 def _builds(args: argparse.Namespace) -> ProvenanceStore:
     root = args.datasets or Path(__file__).resolve().parents[2] / "datasets"
     return ProvenanceStore(root)
+
+
+#: 실행할 수 있는 과제. 모듈 경로만 두고 import는 실행 시점에 한다 — CLI가 뜨는
+#: 데에 pandas와 과제 코드 전부가 필요하지는 않다.
+TASKS = {"task01": "kpx.tasks.task01_price_analysis"}
+
+
+def _cmd_run(args: argparse.Namespace) -> int:
+    """한 조건을 측정하며 실행하고 결과를 저장소에 남긴다 (#13).
+
+    경로가 아니라 이름으로 부른다. 재현하려는 사람이 레포의 디렉터리 구조를 몰라도
+    결과를 다시 만들 수 있어야 한다.
+    """
+    import importlib
+
+    from kpx.runner import run_condition
+
+    if args.list:
+        for name in sorted(TASKS):
+            print(name)
+        return 0
+
+    if args.task not in TASKS:
+        raise RunError(f"unknown task: {args.task!r} (known: {', '.join(sorted(TASKS))})")
+    if args.condition not in CONDITIONS:
+        raise RunError(f"unknown condition: {args.condition!r} (known: {', '.join(CONDITIONS)})")
+    if args.datasets_map is None:
+        raise RunError(
+            "kpx run needs the built layers. Pass --layer dataset=layer=path once per "
+            "layer, or use scripts/run_task01.py which assembles them from a build."
+        )
+
+    task = importlib.import_module(TASKS[args.task]).TASK
+    row = run_condition(
+        task,
+        args.condition,
+        datasets=args.datasets_map,
+        snapshot_id=args.snapshot,
+        pipeline_version=args.pipeline_version,
+        seed=args.seed,
+        warmup=args.warmup,
+        repeat=args.repeat,
+    )
+    default_result_store(args.results).append(row)
+    print(f"{row.run_id}  status={row.status}")
+    return 0
 
 
 def _cmd_info(args: argparse.Namespace) -> int:
@@ -154,6 +205,18 @@ def build_parser() -> argparse.ArgumentParser:
     env.add_argument("--json", action="store_true", help="emit JSON instead of the markdown block")
     env.set_defaults(func=_cmd_env)
 
+    run = sub.add_parser("run", help="run one condition of one task and record it")
+    run.add_argument("--list", action="store_true", help="list the tasks this harness knows")
+    run.add_argument("--task", default=None)
+    run.add_argument("--condition", default=None)
+    run.add_argument("--seed", type=int, default=0)
+    run.add_argument("--snapshot", default=None, help="the frozen source the layers came from")
+    run.add_argument("--pipeline-version", default=None)
+    run.add_argument("--warmup", type=int, default=WARMUP_RUNS)
+    run.add_argument("--repeat", type=int, default=MEASURED_RUNS)
+    run.add_argument("--results", type=Path, default=None)
+    run.set_defaults(func=_cmd_run, datasets_map=None)
+
     schema = sub.add_parser("schema", help="print a built artifact's schema for the paper")
     schema.add_argument("artifact", type=Path, help="path to a .parquet or .jsonl artifact")
     schema.set_defaults(func=_cmd_schema)
@@ -215,7 +278,7 @@ def main(argv: Sequence[str] | None = None) -> int:
     args = build_parser().parse_args(argv)
     try:
         exit_code: int = args.func(args)
-    except (SnapshotError, ProvenanceError, DatasetNotBuilt) as error:
+    except (SnapshotError, ProvenanceError, DatasetNotBuilt, RunError) as error:
         print(f"error: {error}", file=sys.stderr)
         return 2
     return exit_code

@@ -48,14 +48,15 @@ from __future__ import annotations
 import hashlib
 import json
 import platform
-from collections.abc import Iterable, Mapping
+from collections.abc import Iterable, Mapping, Sequence
 from dataclasses import asdict, dataclass
 from importlib import metadata
-from pathlib import PurePath
+from pathlib import Path, PurePath
 from typing import TYPE_CHECKING, Any
 
 if TYPE_CHECKING:
-    from kpx.provenance import Provenance
+    from kpx.contract import Layer
+    from kpx.provenance import Provenance, ProvenanceStore
 
 #: How much of the config hash goes into the citable identifier. Twelve hex
 #: characters is the width the snapshot id uses, for the same reason: long
@@ -227,3 +228,149 @@ def _installed(distribution: str) -> str:
 
 def _optional_str(value: Any) -> str | None:
     return None if value is None else str(value)
+
+
+def _layer_columns(manifest: Mapping[str, Any], alias: str) -> tuple[str, ...]:
+    """Column names the builder reported for ``alias``, or empty if it did not.
+
+    Empty is honest. Inventing names here would make schema comparisons in R2
+    compare something the builder never said.
+    """
+    summaries = manifest.get("schema_summaries") or {}
+    fields = (summaries.get(alias) or {}).get("fields") or []
+    names = [field.get("name") for field in fields if isinstance(field, Mapping)]
+    return tuple(name for name in names if isinstance(name, str))
+
+
+def record_layer_chain(
+    run_dir: Path | str,
+    *,
+    dataset: str,
+    snapshot_id: str,
+    config: Mapping[str, Any],
+    alias: str,
+    store: ProvenanceStore,
+    layers: Sequence[Layer] = ("bronze", "silver"),
+) -> dict[Layer, Provenance]:
+    """Record one builder run as a chain of layer builds.
+
+    The builder writes its layers under ``<run_dir>/<layer>/<alias>/`` and a
+    ``manifest.json`` beside them. This turns that into the provenance chain R1
+    and R2 rest on: each layer names the build it was derived from, so
+    :meth:`ProvenanceStore.lineage` can walk a Gold build back to the snapshot
+    it came from.
+
+    The bytes are **not** copied into the store. They already exist in the build
+    directory, and a second copy of a 140 MiB Bronze artifact per build buys
+    nothing — ``output_checksum`` identifies them, and that is what the
+    committed record needs to carry.
+
+    The harness reads the manifest as plain data; it never imports
+    ``kpubdata_builder``, which is installed in a different environment.
+    """
+    # provenance가 이 모듈의 config_hash를 쓰므로 반대 방향은 여기서 찾는다.
+    from kpx.provenance import BuildInputs, ProvenanceError, record_build
+
+    run_dir = Path(run_dir)
+    manifest_path = run_dir / "manifest.json"
+    if not manifest_path.exists():
+        raise ProvenanceError(f"no build manifest at {manifest_path}")
+
+    manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+    version = PipelineVersion.from_build_manifest(manifest, config)
+    status = str(manifest.get("status", "unknown"))
+    row_count = int((manifest.get("row_counts") or {}).get(alias, 0))
+    columns = _layer_columns(manifest, alias)
+
+    recorded: dict[Layer, Provenance] = {}
+    upstream: str | None = None
+    for layer in layers:
+        artifact = run_dir / layer / alias
+        if not artifact.is_dir():
+            raise ProvenanceError(f"the build left no {layer} artifact at {artifact}")
+
+        provenance = record_build(
+            artifact,
+            inputs=BuildInputs(
+                dataset=dataset,
+                layer=layer,
+                snapshot_id=snapshot_id,
+                pipeline_version=version.identifier,
+                config_hash=version.config_hash,
+                upstream_build_id=upstream,
+            ),
+            row_count=row_count,
+            columns=columns,
+            status=status,
+        )
+        store.write(provenance)
+        recorded[layer] = provenance
+        upstream = provenance.build_id
+
+    return recorded
+
+
+def record_derived_layer(
+    artifact: Path | str,
+    *,
+    layer: Layer,
+    upstream: Provenance,
+    row_count: int,
+    columns: tuple[str, ...] | list[str],
+    store: ProvenanceStore,
+    status: str = "ok",
+) -> Provenance:
+    """Record a layer the harness derived from an upstream build.
+
+    Task 1's Gold is built here rather than by the builder, whose Gold stage does
+    packaging and not aggregation. That deviation is recorded in Threats; what
+    must not also happen is the artifact escaping the provenance chain, because
+    then nothing ties the analysis back to the snapshot it read.
+
+    Snapshot and pipeline version are inherited from ``upstream`` rather than
+    passed in. A Gold built from a Silver *is* from that Silver's snapshot, and
+    letting a caller say otherwise would let the chain lie.
+    """
+    from kpx.provenance import BuildInputs, record_build
+
+    provenance = record_build(
+        artifact,
+        inputs=BuildInputs(
+            dataset=upstream.inputs.dataset,
+            layer=layer,
+            snapshot_id=upstream.inputs.snapshot_id,
+            pipeline_version=upstream.inputs.pipeline_version,
+            config_hash=upstream.inputs.config_hash,
+            upstream_build_id=upstream.build_id,
+        ),
+        row_count=row_count,
+        columns=columns,
+        status=status,
+    )
+    store.write(provenance)
+    return provenance
+
+
+def assert_same_inputs(builds: Iterable[Provenance]) -> None:
+    """Refuse a set of builds that did not read the same source or code.
+
+    A measurement assembled from artifacts of different snapshots, or built by
+    different pipeline versions, cannot say which input produced its numbers.
+    Failing here is cheaper than discovering it in the results.
+
+    R2 is the deliberate exception on one axis: it varies the snapshot on
+    purpose, so it checks :func:`assert_same_pipeline` alone.
+    """
+    from kpx.provenance import ProvenanceError
+
+    builds = list(builds)
+    if not builds:
+        raise ProvenanceError("no builds to compare")
+
+    snapshots = {build.inputs.snapshot_id for build in builds}
+    if len(snapshots) > 1:
+        raise ProvenanceError(f"builds read different snapshots: {sorted(snapshots)}")
+
+    versions = {build.inputs.pipeline_version for build in builds}
+    if len(versions) > 1:
+        raise ProvenanceError(f"builds used different pipeline versions: {sorted(versions)}")

@@ -270,3 +270,30 @@ class TestSchemaCommand:
 
     def test_a_missing_artifact_is_an_error_not_a_traceback(self, tmp_path: Path) -> None:
         assert main(["schema", str(tmp_path / "absent.parquet")]) == 2
+
+
+class TestRunCommand:
+    """`kpx run` — #13이 정한 실행 경로.
+
+    스크립트가 아니라 설치된 명령이 실험을 돌려야, 재현하려는 사람이 레포 구조를
+    몰라도 결과를 다시 만들 수 있다.
+    """
+
+    def test_lists_the_tasks_it_knows(self, capsys: pytest.CaptureFixture[str]) -> None:
+        assert main(["run", "--list"]) == 0
+
+        assert "task01" in capsys.readouterr().out
+
+    def test_an_unknown_task_is_an_error_not_a_traceback(self) -> None:
+        assert main(["run", "--task", "task99", "--condition", "silver"]) == 2
+
+    def test_an_unknown_condition_is_an_error(self) -> None:
+        assert main(["run", "--task", "task01", "--condition", "platinum"]) == 2
+
+    def test_the_measurement_protocol_is_the_harness_default(self) -> None:
+        from kpx.cli import build_parser
+        from kpx.metrics.runtime import MEASURED_RUNS, WARMUP_RUNS
+
+        args = build_parser().parse_args(["run", "--task", "task01", "--condition", "gold"])
+
+        assert (args.warmup, args.repeat) == (WARMUP_RUNS, MEASURED_RUNS)
