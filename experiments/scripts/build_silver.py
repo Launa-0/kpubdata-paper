@@ -10,6 +10,7 @@
 from __future__ import annotations
 
 import argparse
+import importlib
 import shutil
 import sys
 import time
@@ -18,17 +19,22 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
 from _paths import add_common_arguments, snapshot_source  # noqa: E402
-from trades_spec import build_spec  # noqa: E402
 
-RUN_ID = "trades-silver-001"
+# 데이터셋마다 Silver 계약이 다르다. 같은 기관의 같은 계열 API인데도 컬럼명 규칙과
+# 금액 표현이 다르다 — 그 차이가 T3(통합)에서 Bronze 조건이 치르는 비용이다.
+SPECS = {"trades": "trades_spec", "rent": "rent_spec"}
 
 
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("snapshot_id", help="예: seoul-apartment-trades/20260922-6660c8e25162")
-    parser.add_argument("--run-id", default=RUN_ID)
+    parser.add_argument("--spec", choices=sorted(SPECS), default="trades")
+    parser.add_argument("--run-id", default=None, help="기본값: <spec>-silver-001")
     add_common_arguments(parser)
     args = parser.parse_args(argv)
+
+    build_spec = importlib.import_module(SPECS[args.spec]).build_spec
+    args.run_id = args.run_id or f"{args.spec}-silver-001"
 
     from kpubdata_builder.pipeline import run_build
     from kpubdata_builder.uploads.store import SQLiteUploadRepository
