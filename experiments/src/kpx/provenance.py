@@ -49,7 +49,15 @@ SCHEMA_VERSION = 1
 
 #: Libraries whose version can change a numeric result and so must be reported
 #: in the paper's methodology section.
-TRACKED_PACKAGES = ("pandas", "pyarrow", "numpy", "scikit-learn", "scipy", "kpubdata-builder")
+TRACKED_PACKAGES = (
+    "pandas",
+    "pyarrow",
+    "numpy",
+    "scikit-learn",
+    "scipy",
+    "kpubdata-builder",
+    "kpubdata",
+)
 
 
 class ProvenanceError(RuntimeError):

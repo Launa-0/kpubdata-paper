@@ -9,10 +9,16 @@ from collections.abc import Sequence
 from pathlib import Path
 
 from kpx import __version__
-from kpx.contract import CONDITIONS, LAYERS
+from kpx.contract import CONDITIONS, LAYERS, Layer
+from kpx.datasets import DatasetNotBuilt, LayerStore, read_artifact, schema_report
 from kpx.metrics.runtime import MEASURED_RUNS, WARMUP_RUNS, describe_environment
 from kpx.provenance import ProvenanceError, ProvenanceStore
-from kpx.snapshot import SnapshotError, SnapshotStore, default_store
+from kpx.results import default_store as default_result_store
+from kpx.snapshot import SnapshotError, SnapshotStore, default_store, scan_jsonl
+
+
+class RunError(RuntimeError):
+    """Raised when `kpx run` is asked for something it cannot do."""
 
 
 def _store(args: argparse.Namespace) -> SnapshotStore:
@@ -22,6 +28,75 @@ def _store(args: argparse.Namespace) -> SnapshotStore:
 def _builds(args: argparse.Namespace) -> ProvenanceStore:
     root = args.datasets or Path(__file__).resolve().parents[2] / "datasets"
     return ProvenanceStore(root)
+
+
+#: 실행할 수 있는 과제. 모듈 경로만 두고 import는 실행 시점에 한다 — CLI가 뜨는
+#: 데에 pandas와 과제 코드 전부가 필요하지는 않다.
+TASKS = {"task01": "kpx.tasks.task01_price_analysis"}
+
+
+def _layer_store(specifications: Sequence[str]) -> LayerStore:
+    """``dataset=layer=path`` 들을 러너가 읽을 resolver로 만든다.
+
+    러너는 자기 입력이 어디 있는지 모른 채로 있어야 하므로, 경로는 명령줄에서
+    들어와 여기서 한 번만 해석된다.
+    """
+    paths: dict[tuple[str, Layer], Path] = {}
+    for specification in specifications:
+        parts = specification.split("=", 2)
+        if len(parts) != 3:
+            raise RunError(f"--layer wants dataset=layer=path, got {specification!r}")
+        dataset, layer, path = parts
+        if layer not in LAYERS:
+            raise RunError(f"unknown layer: {layer!r} (known: {', '.join(LAYERS)})")
+        paths[(dataset, layer)] = Path(path)
+    return LayerStore(paths=paths)
+
+
+def _cmd_run(args: argparse.Namespace) -> int:
+    """한 조건을 측정하며 실행하고 결과를 저장소에 남긴다 (#13).
+
+    경로가 아니라 이름으로 부른다. 재현하려는 사람이 레포의 디렉터리 구조를 몰라도
+    결과를 다시 만들 수 있어야 한다.
+    """
+    import importlib
+
+    from kpx.runner import run_condition
+
+    if args.list:
+        for name in sorted(TASKS):
+            print(name)
+        return 0
+
+    if args.task not in TASKS:
+        raise RunError(f"unknown task: {args.task!r} (known: {', '.join(sorted(TASKS))})")
+    if args.condition not in CONDITIONS:
+        raise RunError(f"unknown condition: {args.condition!r} (known: {', '.join(CONDITIONS)})")
+    if not args.layer:
+        raise RunError(
+            "kpx run needs the built layers. Pass --layer dataset=layer=path once per "
+            "layer, or use scripts/run_task01.py which assembles them from a build."
+        )
+    # 결과 행은 어느 스냅샷의 어느 파이프라인에서 나왔는지 말해야 한다. 기본값을
+    # 넣어 주면 그 자리에 추측이 기록되고, 표가 출처를 잃는다.
+    missing = [name for name in ("snapshot", "pipeline_version") if getattr(args, name) is None]
+    if missing:
+        raise RunError(f"kpx run needs {' and '.join('--' + name for name in missing)}")
+
+    task = importlib.import_module(TASKS[args.task]).TASK
+    row = run_condition(
+        task,
+        args.condition,
+        datasets=_layer_store(args.layer),
+        snapshot_id=args.snapshot,
+        pipeline_version=args.pipeline_version,
+        seed=args.seed,
+        warmup=args.warmup,
+        repeat=args.repeat,
+    )
+    default_result_store(args.results).append(row)
+    print(f"{row.run_id}  status={row.status}")
+    return 0
 
 
 def _cmd_info(args: argparse.Namespace) -> int:
@@ -40,6 +115,34 @@ def _cmd_env(args: argparse.Namespace) -> int:
         print(json.dumps(environment.to_json(), indent=2, sort_keys=True))
     else:
         print(environment.to_markdown())
+    return 0
+
+
+def _cmd_schema(args: argparse.Namespace) -> int:
+    if not args.artifact.exists():
+        raise DatasetNotBuilt(f"no artifact at {args.artifact}")
+    report = schema_report(read_artifact(args.artifact))
+    report["Non-null"] = report["Non-null"].map("{:.1%}".format)
+    print(report.to_string(index=False))
+    return 0
+
+
+def _cmd_snapshot_register(args: argparse.Namespace) -> int:
+    scan = scan_jsonl(args.source)
+    snapshot = _store(args).register(
+        args.source,
+        dataset=args.dataset,
+        source_url=args.source_url,
+        row_count=scan.row_count,
+        columns=scan.columns,
+        data_schema_version=args.schema_version,
+        period=tuple(args.period) if args.period else None,
+        builder_version=args.collector,
+        notes=args.notes,
+    )
+    print(snapshot.snapshot_id)
+    print(f"rows={snapshot.row_count:,}  cols={snapshot.column_count}")
+    print(f"sha256={snapshot.checksum}")
     return 0
 
 
@@ -125,8 +228,54 @@ def build_parser() -> argparse.ArgumentParser:
     env.add_argument("--json", action="store_true", help="emit JSON instead of the markdown block")
     env.set_defaults(func=_cmd_env)
 
+    run = sub.add_parser("run", help="run one condition of one task and record it")
+    run.add_argument("--list", action="store_true", help="list the tasks this harness knows")
+    run.add_argument("--task", default=None)
+    run.add_argument("--condition", default=None)
+    run.add_argument("--seed", type=int, default=0)
+    run.add_argument("--snapshot", default=None, help="the frozen source the layers came from")
+    run.add_argument("--pipeline-version", default=None)
+    run.add_argument("--warmup", type=int, default=WARMUP_RUNS)
+    run.add_argument("--repeat", type=int, default=MEASURED_RUNS)
+    run.add_argument("--results", type=Path, default=None)
+    run.add_argument(
+        "--layer",
+        action="append",
+        default=[],
+        metavar="DATASET=LAYER=PATH",
+        help="a built layer the condition may read; pass once per layer",
+    )
+    run.set_defaults(func=_cmd_run)
+
+    schema = sub.add_parser("schema", help="print a built artifact's schema for the paper")
+    schema.add_argument("artifact", type=Path, help="path to a .parquet or .jsonl artifact")
+    schema.set_defaults(func=_cmd_schema)
+
     snapshot = sub.add_parser("snapshot", help="inspect frozen source snapshots")
     snapshot_sub = snapshot.add_subparsers(dest="snapshot_command", required=True)
+
+    register = snapshot_sub.add_parser(
+        "register", help="freeze a pull into the store and write its metadata"
+    )
+    register.add_argument("source", type=Path, help="directory holding the pulled .jsonl")
+    register.add_argument("--dataset", required=True)
+    register.add_argument("--source-url", required=True)
+    register.add_argument("--schema-version", required=True, help="the source API's schema id")
+    register.add_argument(
+        "--period",
+        nargs=2,
+        metavar=("START", "END"),
+        default=None,
+        help="the data's own coverage, e.g. 2020-01 2024-12 (not the pull date)",
+    )
+    register.add_argument(
+        "--collector",
+        default=None,
+        metavar="VERSION",
+        help="version of the client that pulled these bytes, e.g. 'kpubdata 0.5.0'",
+    )
+    register.add_argument("--notes", default="")
+    register.set_defaults(func=_cmd_snapshot_register)
 
     listing = snapshot_sub.add_parser("list", help="list registered snapshots, oldest first")
     listing.add_argument("--dataset", default=None, help="restrict to one dataset")
@@ -159,7 +308,7 @@ def main(argv: Sequence[str] | None = None) -> int:
     args = build_parser().parse_args(argv)
     try:
         exit_code: int = args.func(args)
-    except (SnapshotError, ProvenanceError) as error:
+    except (SnapshotError, ProvenanceError, DatasetNotBuilt, RunError) as error:
         print(f"error: {error}", file=sys.stderr)
         return 2
     return exit_code

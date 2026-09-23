@@ -25,18 +25,16 @@ What the builder records today
 
 ``kpubdata-builder`` writes a ``BuildManifest`` with ``build_id``,
 ``started_at``/``finished_at``, ``inputs``, ``outputs``, ``warnings``,
-``errors`` and ``row_counts``. It does **not** record which version of itself or
-of ``kpubdata`` ran — the package defines ``__version__`` but never writes it
-into the manifest.
+``errors``, ``row_counts``, ``schema_summaries`` and a ``build_environment``
+naming the builder, ``kpubdata`` and Python versions that ran.
 
-So :meth:`PipelineVersion.from_build_manifest` reads what the manifest has and
-takes the versions from the caller or from the installed distributions, marking
-anything it cannot establish ``unknown`` rather than guessing. A version column
-reading ``unknown`` is honest; a guessed one silently weakens every R1 and R2
-claim built on it. Teaching the builder to stamp its own version belongs with
-the Bronze export work (issue #2); until then ``capture`` — which reads the
-installed distributions — is the accurate path, and it is accurate only when the
-build ran in the environment now doing the reading.
+:meth:`PipelineVersion.from_build_manifest` reads those rather than the versions
+installed wherever the manifest is being read. The distinction matters: builds
+run in the builder environment and are recorded from the harness environment,
+so reading the local interpreter would describe the wrong machine. What the
+manifest does not say is left ``unknown`` rather than guessed — an ``unknown``
+in a version column is honest, and a guess silently weakens every R1 and R2
+claim resting on it.
 
 The harness never imports ``kpubdata_builder``. Manifests are consumed as plain
 data, which is what lets a reader verify a published artifact without installing
@@ -48,14 +46,16 @@ from __future__ import annotations
 import hashlib
 import json
 import platform
-from collections.abc import Iterable, Mapping
+from collections.abc import Iterable, Mapping, Sequence
 from dataclasses import asdict, dataclass
 from importlib import metadata
-from pathlib import PurePath
+from pathlib import Path, PurePath
 from typing import TYPE_CHECKING, Any
 
 if TYPE_CHECKING:
-    from kpx.provenance import Provenance
+    from kpx.contract import Layer
+    from kpx.provenance import Environment, Provenance, ProvenanceStore
+    from kpx.snapshot import Snapshot
 
 #: How much of the config hash goes into the citable identifier. Twelve hex
 #: characters is the width the snapshot id uses, for the same reason: long
@@ -64,9 +64,37 @@ CONFIG_HASH_PREFIX = 12
 
 UNKNOWN = "unknown"
 
+#: Keys dropped before a declared BuildSpec is hashed into ``config_hash``.
+#:
+#: A deny list, not an allow list. An allow list is how ``derived`` came to be
+#: left out of the identifier: a rule was added to the spec, nobody remembered
+#: to add it here, and the recipe changed while ``pipeline_version`` stood
+#: still. With a deny list a new spec field is part of the identity by default
+#: and someone has to name it in writing to take it out.
+#:
+#: What is named here changes no bytes. ``upload_id`` is a new row in the upload
+#: store on every run; ``description`` is the sentence the calling script passed;
+#: ``output_path`` is where the parquet lands, not what is in it. Hashing those
+#: would make R1's repeated builds and R2's T1/T2/T3 look like different
+#: pipelines, which is the opposite failure.
+RUN_SCOPED_KEYS = frozenset(
+    {"upload_id", "title", "description", "metadata", "publish", "output_path"}
+)
+
 
 class PipelineError(RuntimeError):
     """Raised when pipeline identity is missing, malformed, or inconsistent."""
+
+
+def transformation_recipe(spec: Mapping[str, Any]) -> dict[str, Any]:
+    """The part of a declared BuildSpec that decides what the output contains.
+
+    One place, so that no script assembles its own idea of what the recipe is.
+    Every rule the spec declares — ``read_as``, ``rename``, ``casts``,
+    ``required``, ``derived``, ``null_tokens``, ``dtypes``, the export kind —
+    is in the hash unless :data:`RUN_SCOPED_KEYS` names it out.
+    """
+    return dict(_without_run_scoped(spec))
 
 
 def canonical_config(config: Mapping[str, Any]) -> str:
@@ -162,11 +190,10 @@ class PipelineVersion:
         """Read a builder ``BuildManifest``, adding the config hash.
 
         The manifest is consumed as plain data; the harness does not import
-        ``kpubdata_builder``. Today's manifest carries no version fields at all,
-        so they are taken from the arguments, else from a ``build_environment``
-        object if a future manifest grows one, else left ``unknown``. Nothing is
-        guessed: an ``unknown`` in a version column is honest, and a guess would
-        silently weaken every claim resting on it.
+        ``kpubdata_builder``. Versions come from the arguments, else from the
+        manifest's ``build_environment``, else ``unknown``. Nothing falls back
+        to the versions installed here: this is read in the harness environment
+        and the build ran in the builder's.
         """
         environment = manifest.get("build_environment") or {}
         if not isinstance(environment, Mapping):
@@ -181,6 +208,28 @@ class PipelineVersion:
             kpubdata_version=pick(kpubdata_version, "kpubdata_version"),
             python_version=pick(python_version, "python_version"),
             builder_build_id=_optional_str(manifest.get("build_id")),
+        )
+
+    def build_environment(self) -> Environment:
+        """Where the build ran, as :mod:`kpx.provenance` records environments.
+
+        ``platform`` stays ``unknown``: the manifest does not say which machine
+        built the artifact, and filling in the machine reading the manifest
+        would put the harness host on a record describing a builder run. That
+        matters beyond tidiness — :meth:`Environment.differences` exists to
+        answer "did the environment move?" when a rebuild's checksum differs,
+        and it can only answer honestly if it was never quietly invented.
+        """
+        from kpx.provenance import Environment
+
+        packages = {
+            "kpubdata-builder": self.builder_version,
+            "kpubdata": self.kpubdata_version,
+        }
+        return Environment(
+            python_version=self.python_version,
+            platform=UNKNOWN,
+            packages={name: version for name, version in packages.items() if version != UNKNOWN},
         )
 
 
@@ -227,3 +276,233 @@ def _installed(distribution: str) -> str:
 
 def _optional_str(value: Any) -> str | None:
     return None if value is None else str(value)
+
+
+def _without_run_scoped(value: Any) -> Any:
+    """Drop :data:`RUN_SCOPED_KEYS` wherever they appear, at any depth.
+
+    Nested because the keys are: ``upload_id`` sits inside a source and
+    ``output_path`` inside an export, not at the top of the spec.
+    """
+    if isinstance(value, Mapping):
+        return {
+            str(key): _without_run_scoped(item)
+            for key, item in value.items()
+            if key not in RUN_SCOPED_KEYS
+        }
+    if isinstance(value, (list, tuple)):
+        return [_without_run_scoped(item) for item in value]
+    return value
+
+
+def _layer_columns(manifest: Mapping[str, Any], alias: str) -> tuple[str, ...]:
+    """Column names the builder reported for ``alias``, or empty if it did not.
+
+    Empty is honest. Inventing names here would make schema comparisons in R2
+    compare something the builder never said.
+    """
+    summaries = manifest.get("schema_summaries") or {}
+    fields = (summaries.get(alias) or {}).get("fields") or []
+    names = [field.get("name") for field in fields if isinstance(field, Mapping)]
+    return tuple(name for name in names if isinstance(name, str))
+
+
+def _bronze_shape(artifact: Path, snapshot: Snapshot) -> tuple[int, tuple[str, ...]]:
+    """What Bronze actually holds — not what Silver holds.
+
+    The manifest describes the *canonical* output: ``row_counts`` is the rows
+    that survived to Silver and ``schema_summaries`` names Silver's renamed,
+    cast, derived columns. Applying either to Bronze made the Bronze record
+    claim ``apt_name``/``build_year``, columns that exist nowhere in the frozen
+    source, and made row loss between the layers invisible by construction.
+
+    Bronze answers for itself: the builder's own Bronze ``metadata.json`` for
+    the row count, the frozen snapshot for the columns. Both are records of the
+    raw pull rather than of the contract applied to it.
+    """
+    records = sorted(artifact.rglob("metadata.json"))
+    if not records:
+        raise PipelineError(f"the bronze artifact at {artifact} carries no metadata.json")
+    payload = json.loads(records[0].read_text(encoding="utf-8"))
+    if "record_count" not in payload:
+        raise PipelineError(f"{records[0]} does not report a record_count")
+    return int(payload["record_count"]), snapshot.columns
+
+
+def record_layer_chain(
+    run_dir: Path | str,
+    *,
+    snapshot: Snapshot,
+    config: Mapping[str, Any],
+    alias: str,
+    store: ProvenanceStore,
+    dataset: str | None = None,
+    builder_version: str | None = None,
+    layers: Sequence[Layer] = ("bronze", "silver"),
+) -> dict[Layer, Provenance]:
+    """Record one builder run as a chain of layer builds.
+
+    The builder writes its layers under ``<run_dir>/<layer>/<alias>/`` and a
+    ``manifest.json`` beside them. This turns that into the provenance chain R1
+    and R2 rest on: each layer names the build it was derived from, so
+    :meth:`ProvenanceStore.lineage` can walk a Gold build back to the snapshot
+    it came from.
+
+    ``builder_version`` overrides what the manifest reports. The manifest's value
+    comes from the installed distribution's metadata, which goes stale under an
+    editable install — three earlier builds recorded ``0.1.0`` for code whose
+    package actually declared ``0.4.0.dev0``. A caller that knows the builder's
+    git commit should pass it; ``scripts/_builder_identity.py`` produces one.
+
+    Takes the :class:`~kpx.snapshot.Snapshot` rather than its id, because Bronze
+    is described by the frozen pull and not by the manifest — see
+    :func:`_bronze_shape`. Passing the record instead of the string also means a
+    build cannot be recorded against a snapshot nobody registered.
+
+    The bytes are **not** copied into the store. They already exist in the build
+    directory, and a second copy of a 140 MiB Bronze artifact per build buys
+    nothing — ``output_checksum`` identifies them, and that is what the
+    committed record needs to carry.
+
+    The harness reads the manifest as plain data; it never imports
+    ``kpubdata_builder``, which is installed in a different environment.
+    """
+    # provenance가 이 모듈의 config_hash를 쓰므로 반대 방향은 여기서 찾는다.
+    from kpx.provenance import BuildInputs, ProvenanceError, record_build
+
+    run_dir = Path(run_dir)
+    manifest_path = run_dir / "manifest.json"
+    if not manifest_path.exists():
+        raise ProvenanceError(f"no build manifest at {manifest_path}")
+
+    manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+    version = PipelineVersion.from_build_manifest(manifest, config, builder_version=builder_version)
+    environment = version.build_environment()
+    status = str(manifest.get("status", "unknown"))
+    canonical_rows = int((manifest.get("row_counts") or {}).get(alias, 0))
+    canonical_columns = _layer_columns(manifest, alias)
+
+    recorded: dict[Layer, Provenance] = {}
+    upstream: str | None = None
+    for layer in layers:
+        artifact = run_dir / layer / alias
+        if not artifact.is_dir():
+            raise ProvenanceError(f"the build left no {layer} artifact at {artifact}")
+
+        if layer == "bronze":
+            row_count, columns = _bronze_shape(artifact, snapshot)
+        else:
+            row_count, columns = canonical_rows, canonical_columns
+
+        provenance = record_build(
+            artifact,
+            inputs=BuildInputs(
+                dataset=dataset or snapshot.dataset,
+                layer=layer,
+                snapshot_id=snapshot.snapshot_id,
+                pipeline_version=version.identifier,
+                config_hash=version.config_hash,
+                upstream_build_id=upstream,
+            ),
+            row_count=row_count,
+            columns=columns,
+            status=status,
+            environment=environment,
+        )
+        store.write(provenance)
+        recorded[layer] = provenance
+        upstream = provenance.build_id
+
+    return recorded
+
+
+def derived_config_hash(upstream: Provenance, recipe: str) -> str:
+    """The upstream recipe and the transformation applied on top of it.
+
+    A layer the harness derives has two halves to its identity: the build it
+    read and the code that turned it into something else. Inheriting only the
+    first — which is what happened before — meant Task 1's Gold kept the same
+    ``build_id`` after its aggregation changed, so a record could describe bytes
+    it had never seen.
+
+    ``recipe`` is the source of the transformation, not a description of it. A
+    hand-written summary of what the code does is a copy that drifts from the
+    code, and a copy that drifts is exactly the failure this is fixing. The cost
+    is that reformatting the function moves the hash; a build id that moves when
+    nothing semantic changed is a nuisance, one that stays put when the
+    aggregation changed is a wrong record.
+    """
+    material = f"{upstream.inputs.config_hash}\n{recipe}"
+    return hashlib.sha256(material.encode("utf-8")).hexdigest()
+
+
+def record_derived_layer(
+    artifact: Path | str,
+    *,
+    layer: Layer,
+    upstream: Provenance,
+    recipe: str,
+    row_count: int,
+    columns: tuple[str, ...] | list[str],
+    store: ProvenanceStore,
+    status: str = "ok",
+) -> Provenance:
+    """Record a layer the harness derived from an upstream build.
+
+    Task 1's Gold is built here rather than by the builder, whose Gold stage does
+    packaging and not aggregation. That deviation is recorded in Threats; what
+    must not also happen is the artifact escaping the provenance chain, because
+    then nothing ties the analysis back to the snapshot it read.
+
+    Snapshot and pipeline version are inherited from ``upstream`` rather than
+    passed in. A Gold built from a Silver *is* from that Silver's snapshot, and
+    letting a caller say otherwise would let the chain lie. ``config_hash`` is
+    the one field that is not inherited whole — see :func:`derived_config_hash`.
+
+    Which means the paper cannot say ``pipeline_version`` identifies a derived
+    layer's whole recipe. It identifies the upstream pipeline; the derived layer
+    is identified by that version together with its own ``config_hash``.
+    """
+    from kpx.provenance import BuildInputs, record_build
+
+    provenance = record_build(
+        artifact,
+        inputs=BuildInputs(
+            dataset=upstream.inputs.dataset,
+            layer=layer,
+            snapshot_id=upstream.inputs.snapshot_id,
+            pipeline_version=upstream.inputs.pipeline_version,
+            config_hash=derived_config_hash(upstream, recipe),
+            upstream_build_id=upstream.build_id,
+        ),
+        row_count=row_count,
+        columns=columns,
+        status=status,
+    )
+    store.write(provenance)
+    return provenance
+
+
+def assert_same_inputs(builds: Iterable[Provenance]) -> None:
+    """Refuse a set of builds that did not read the same source or code.
+
+    A measurement assembled from artifacts of different snapshots, or built by
+    different pipeline versions, cannot say which input produced its numbers.
+    Failing here is cheaper than discovering it in the results.
+
+    R2 is the deliberate exception on one axis: it varies the snapshot on
+    purpose, so it checks :func:`assert_same_pipeline` alone.
+    """
+    from kpx.provenance import ProvenanceError
+
+    builds = list(builds)
+    if not builds:
+        raise ProvenanceError("no builds to compare")
+
+    snapshots = {build.inputs.snapshot_id for build in builds}
+    if len(snapshots) > 1:
+        raise ProvenanceError(f"builds read different snapshots: {sorted(snapshots)}")
+
+    versions = {build.inputs.pipeline_version for build in builds}
+    if len(versions) > 1:
+        raise ProvenanceError(f"builds used different pipeline versions: {sorted(versions)}")

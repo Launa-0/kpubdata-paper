@@ -28,10 +28,13 @@ from __future__ import annotations
 
 import json
 import shutil
+from collections.abc import Sequence
 from dataclasses import asdict, dataclass
 from datetime import date, datetime
 from pathlib import Path
 from typing import Any
+
+import pandas as pd
 
 from kpx.digest import TreeDigest, digest_tree
 
@@ -132,6 +135,53 @@ class VerifyResult:
     def raise_for_status(self) -> None:
         if not self.ok:
             raise SnapshotError(f"snapshot {self.snapshot_id} failed verification: {self.reason}")
+
+
+@dataclass(frozen=True)
+class SourceScan:
+    """What the frozen bytes themselves say about their shape."""
+
+    row_count: int
+    columns: tuple[str, ...]
+
+
+def scan_jsonl(source: Path | str) -> SourceScan:
+    """Count rows and collect the column union across the JSONL under ``source``.
+
+    Columns are the union over records, not the first record's keys: these APIs
+    omit a field entirely when it has no value, so the first record understates
+    the schema and Table 1 would report a column count that is simply wrong.
+    """
+    source = Path(source)
+    files = sorted(source.rglob("*.jsonl"))
+    if not files:
+        raise SnapshotError(f"no .jsonl files under {source}")
+
+    rows = 0
+    columns: dict[str, None] = {}
+    for path in files:
+        with path.open(encoding="utf-8") as handle:
+            for line in handle:
+                if not line.strip():
+                    continue
+                rows += 1
+                columns.update(dict.fromkeys(json.loads(line)))
+    return SourceScan(row_count=rows, columns=tuple(sorted(columns)))
+
+
+def table1(snapshots: Sequence[Snapshot]) -> pd.DataFrame:
+    """Table 1 (Dataset): one row per snapshot, sizes in MiB.
+
+    Raw byte counts in a paper table are unreadable; the snapshot id keeps the
+    exact bytes identifiable, so the size only has to give the order of
+    magnitude.
+    """
+    rows = []
+    for snapshot in snapshots:
+        row = snapshot.table1_row()
+        row["Size"] = f"{row['Size'] / 1024 / 1024:.1f} MiB"
+        rows.append(row)
+    return pd.DataFrame(rows)
 
 
 def make_snapshot_id(dataset: str, retrieved_at: datetime, digest: TreeDigest) -> str:
