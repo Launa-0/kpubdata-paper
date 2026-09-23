@@ -144,14 +144,32 @@ def run_condition(
         function_count=code.function_count,
         transformation_steps=code.transformation_steps,
         output_hash=output_digest(output.result),
-        **_metrics(output),
+        **_metrics(prepared, output),
     )
 
 
-def _metrics(output: AnalysisOutput) -> dict[str, float]:
-    """The task's correctness numbers, keyed by result schema field.
+def _metrics(prepared: AnalysisInput, output: AnalysisOutput) -> dict[str, float]:
+    """The run's correctness numbers, keyed by result schema field.
+
+    Two sources, because two different things are being measured.
+
+    Some correctness numbers are properties of *preparation* rather than of the
+    analysis — Task 3's ``join_matching_rate`` is the clearest case: how many
+    sale keys found a jeonse counterpart is decided before the analysis runs.
+    Those arrive in ``AnalysisInput.notes``. The analysis must not read notes
+    (that is what keeps it identical across conditions), but the result row is
+    not the analysis, so the runner reads them on the way out.
+
+    ``output.metrics`` wins on a collision: a number the analysis computed is
+    about the analysis, and preparation should not be able to overwrite it.
 
     A metric the schema has no field for is left out rather than guessed at —
-    the task reports it in its own notes instead.
+    the task keeps it in its notes.
     """
-    return {name: value for name, value in output.metrics.items() if name in METRIC_FIELDS}
+    from_preparation = {
+        name: float(value)
+        for name, value in prepared.notes.items()
+        if name in METRIC_FIELDS and isinstance(value, (int, float))
+    }
+    from_analysis = {name: value for name, value in output.metrics.items() if name in METRIC_FIELDS}
+    return {**from_preparation, **from_analysis}

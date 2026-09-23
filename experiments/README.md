@@ -523,6 +523,44 @@ code*, with data quality and correctness reported separately. It cannot support
 *layering reduces analyst effort* — and the two are plausibly least proportional
 exactly where it matters, since a Bronze `"120,000"` silently parsed as `120`
 costs a machine nothing and an analyst a great deal.
+## Task 3: what a join measures, and what it does not
+
+Task 3 is the paper's integration experiment. Task 1 measures the cost of
+cleaning one dataset; Task 3 measures the cost of *connecting two*, on
+`(district_code, apt_name, year_month, area_bucket)`.
+
+**Bronze also normalizes apartment names.** Issue #15 expected Bronze's matching
+rate to fall for want of name standardization. It is not implemented that way.
+Joining on raw names does lower the matching rate, but that is not an effect of
+the data layer — it is a baseline made to fail on purpose, and the control
+condition of this study is that cleaning rules do not vary by condition (#12).
+That control is not only about `monolithic`.
+
+So `join_matching_rate` is expected to be **equal** for bronze, silver and
+monolithic, and a test fixes it. If it ever differs, three conditions have run
+different cleaning and that is a bug, not a finding.
+
+What Task 3 does measure:
+
+| | |
+| :--- | :--- |
+| RQ2 | the preprocessing cost of reaching a correct join — Bronze builds both datasets' keys itself, Silver only derives and joins, Gold does neither |
+| RQ3 | whether all four conditions reach the **same** jeonse ratio. Gold's join happened at pipeline time, so a Gold disagreement means the pipeline joined by a different rule than the analysis — the point where layering can silently change a result |
+| | `invalid_key_rate`: rows Bronze and monolithic must find and drop themselves |
+
+An equal matching rate is a null result, but an honest one, and it is usable
+material for the Baseline Bias paragraph of Threats to Validity.
+
+Two domain rules the join depends on, both fixed in `transforms.py`:
+
+* **Only 전세 contracts enter the ratio.** A contract with monthly rent has a
+  deposit that is a different quantity; averaging it in yields a number that is
+  not a jeonse ratio at all.
+* **Parentheses are stripped, their contents kept.** Building and phase numbers
+  live in them (`래미안 강남 힐즈(1단지)`). Dropping the contents would make 1단지
+  and 2단지 the same key — worse than a failed join, because a failure shows up
+  as unmatched while a merge of two different buildings enters the average with
+  nothing to mark it.
 
 ## Development
 
