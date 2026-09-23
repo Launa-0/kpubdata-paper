@@ -73,20 +73,38 @@ CAST_KINDS: dict[str, str] = {
 _YEAR_MONTH_DASHED = re.compile(r"^\d{4}-(0[1-9]|1[0-2])$")
 _YEAR_MONTH_COMPACT = re.compile(r"^\d{4}(0[1-9]|1[0-2])$")
 
+# polars does not trim before casting, and ``Int64`` refuses a decimal point
+# even when the value is whole: ``"12.0"`` is null, not 12. Matching that
+# matters — the claim is that the measurement reads what the pipeline reads, so
+# a reader that is more generous than the build makes Bronze look better than
+# the build would have found it.
+_INTEGER = re.compile(r"^[+-]?\d+$")
+_FLOAT = re.compile(r"^[+-]?(\d+(\.\d*)?|\.\d+)([eE][+-]?\d+)?$")
 
-def _numeric(value: object) -> float | None:
-    text = str(value).strip()
-    return float(text) if text else None
+
+def _integer(value: object) -> int | None:
+    text = str(value)
+    return int(text) if _INTEGER.match(text) else None
 
 
-def _numeric_comma(value: object) -> float | None:
+def _float(value: object) -> float | None:
+    text = str(value)
+    return float(text) if _FLOAT.match(text) else None
+
+
+def _integer_comma(value: object) -> int | None:
     """The whole reason this module exists.
 
     ``pd.to_numeric("120,000")`` fails. Counting that as a parsing failure
     measures how hostile the reader was told to be, not the data — the bias
-    ``quality`` guards against. The pipeline reads it, so the measurement does.
+    ``quality`` guards against. The pipeline strips the separators and reads it,
+    so the measurement does too.
     """
-    return _numeric(str(value).replace(",", ""))
+    return _integer(str(value).replace(",", "").strip())
+
+
+def _float_comma(value: object) -> float | None:
+    return _float(str(value).replace(",", "").strip())
 
 
 def _year_month(value: object) -> str | None:
@@ -99,15 +117,16 @@ def _year_month(value: object) -> str | None:
     return None
 
 
-#: Cast name -> how the pipeline reads a value declared that way. A cast with
-#: no entry is read as stored, which is what ``float``/``int`` already are.
+#: Cast name -> how the pipeline reads a value declared that way. A declared
+#: cast that is missing here is an error, not a fallback - see
+#: :func:`interpreter_for`.
 INTERPRETERS: dict[str, Callable[[object], Any]] = {
-    "int": _numeric,
-    "int64": _numeric,
-    "float": _numeric,
-    "float64": _numeric,
-    "int_comma": _numeric_comma,
-    "float_comma": _numeric_comma,
+    "int": _integer,
+    "int64": _integer,
+    "float": _float,
+    "float64": _float,
+    "int_comma": _integer_comma,
+    "float_comma": _float_comma,
     "year_month": _year_month,
 }
 
@@ -133,7 +152,24 @@ class Role:
 
 
 def interpreter_for(role: Role) -> Callable[[object], Any] | None:
-    return INTERPRETERS.get(role.cast)
+    """How the pipeline reads this role, or an error if nobody decided.
+
+    A declared cast with no entry here must not fall back to the default
+    reader. That is how the two definitions drifted apart the first time: the
+    module said Bronze gets the pipeline's interpretation, and a cast nobody
+    had taught it quietly got pandas' instead. A role with no cast declared has
+    nothing to interpret and reads as stored, which is a different thing.
+    """
+    if not role.cast:
+        return None
+    try:
+        return INTERPRETERS[role.cast]
+    except KeyError:
+        raise RoleError(
+            f"role {role.name!r} declares cast {role.cast!r}, which this measurement "
+            "cannot read. Teach INTERPRETERS what the builder does with it rather "
+            "than letting it fall back to a different definition."
+        ) from None
 
 
 def plan_roles(contract: Mapping[str, Any]) -> tuple[Role, ...]:

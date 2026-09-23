@@ -48,9 +48,12 @@ predicate도, 데이터셋별 예외도 없다. 어떤 데이터셋이 나쁘게
 ``Bronze (semantic)``  계약이 선언한 캐스팅을 Bronze에도 준다. ``pd.to_numeric``
                        으로 ``"120,000"``을 실패 처리하면 H1이 아니라 우리가
                        Bronze에 얼마나 적대적이었는가를 재게 된다. **H1 primary.**
-``Bronze (stored)``    해석 없이 저장 표현 그대로. 별도 전처리 없이 raw를 바로
-                       읽는 분석자가 무엇을 마주하는가를 본다. 이것은 데이터
-                       품질이라기보다 **준비 비용**이고, RQ2와 함께 읽는다.
+``Bronze (naive)``     계약의 파서를 주지 않는다. 값이 없어지는 것이 아니라
+                       ``pd.to_numeric``/``pd.to_datetime``이라는 **기본 해석**이
+                       쓰인다 — 그래서 '저장 표현 그대로'가 아니라 '계약 파서
+                       없이'가 정확한 이름이다. 별도 전처리 없이 raw를 읽는
+                       분석자가 무엇을 마주하는가를 보며, 데이터 품질이라기보다
+                       **준비 비용**이고 RQ2와 함께 읽는다.
 
 정의를 결과를 보고 고르지 않으려면 둘 다 내놓고 질문을 다르게 붙여야 한다.
 
@@ -226,14 +229,15 @@ def main(argv: list[str] | None = None) -> int:
         # 같은 투영을 두 번 읽는다. 조건이 하나 더 생긴 것이 아니라 **같은 Bronze
         # artifact에 대한 두 개의 view**다.
         #   semantic — 파이프라인이 실제로 쓰는 해석을 Bronze에도 준다. H1 primary.
-        #   stored   — 해석 없이 저장 표현 그대로. 준비 비용을 보는 보조 관측이다.
+        #   naive    — 계약 파서를 주지 않는다. 값이 사라지는 것이 아니라 pandas의
+        #              기본 해석이 쓰인다. 준비 비용을 보는 보조 관측이다.
         semantic = layer_spec(roles, interpreted=True)
-        stored = layer_spec(roles, interpreted=False)
+        naive = layer_spec(roles, interpreted=False)
         reports = {
             "bronze": measure_quality(bronze_roles, semantic, layer="bronze"),
             "silver": measure_quality(silver_roles, semantic, layer="silver"),
         }
-        bronze_stored = measure_quality(bronze_roles, stored, layer="bronze")
+        bronze_naive = measure_quality(bronze_roles, naive, layer="bronze")
         print("\n  -- row-level (H1 comparable) --")
         print(
             pd.DataFrame(
@@ -242,7 +246,7 @@ def main(argv: list[str] | None = None) -> int:
                         "Metric": m,
                         "Bronze (semantic)": reports["bronze"].metric(m),
                         "Silver": reports["silver"].metric(m),
-                        "Bronze (stored)": bronze_stored.metric(m),
+                        "Bronze (naive)": bronze_naive.metric(m),
                     }
                     for m in H1_COMPARABLE_METRICS
                 ]
@@ -251,8 +255,8 @@ def main(argv: list[str] | None = None) -> int:
         print(
             "     H1 primary는 Bronze (semantic) 대 Silver다 — 양쪽에 같은 해석 능력을"
             " 준다.\n"
-            "     Bronze (stored)는 해석 없이 저장 표현을 그대로 읽었을 때 분석자가"
-            " 마주하는 것이고,\n"
+            "     Bronze (naive)는 계약 파서 없이 pandas 기본 해석으로 읽었을 때"
+            " 분석자가 마주하는 것이고,\n"
             "     데이터 품질이 아니라 준비 비용에 가깝다 (RQ2와 함께 읽는다)."
         )
         # 진단 지표는 한 표 안에 섞지 않는다. 나란히 찍으면 두 열을 빼는 읽기를
@@ -324,8 +328,8 @@ def main(argv: list[str] | None = None) -> int:
     print()
     print("role은 각 데이터셋의 Silver 계약에서 유도했다. 손으로 고른 것이 없다.")
     print("required는 docs/required-columns.md의 규칙(식별자 + 시점 + 주된 사실)을 따른다.")
-    print("양쪽에 같은 해석 능력을 준 비교다 — Bronze를 저장 표현 그대로 읽은 값은")
-    print("데이터셋별 상세표의 Bronze (stored) 열에 있다.")
+    print("양쪽에 같은 해석 능력을 준 비교다 — Bronze를 계약 파서 없이 읽은 값은")
+    print("데이터셋별 상세표의 Bronze (naive) 열에 있다.")
     return 0
 
 

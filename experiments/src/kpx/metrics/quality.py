@@ -1,4 +1,4 @@
-"""Data quality for RQ1/H1: what standardization actually improves.
+r"""Data quality for RQ1/H1: what standardization actually improves.
 
 H1 predicts that Silver improves type consistency, code validity and schema
 conformance over Bronze, and reduces missing values, duplicates and parsing
@@ -17,9 +17,10 @@ Two ways this measurement could manufacture H1, and what stops each
 **Reading Bronze naively.** ``pd.to_numeric("120,000")`` fails, and if that
 counted as a parsing failure, H1 would be measuring how hostile we chose to be
 to Bronze rather than anything about the data. So a Bronze spec passes the same
-interpretation functions the Silver *build* uses — the task's ``transforms``
-helpers — and Bronze is credited with every value those can read. What remains
-a failure is a value that the pipeline itself could not parse.
+interpretation the Silver *build* declares — ``kpx.metrics.roles.INTERPRETERS``,
+keyed by the cast in the contract — and Bronze is credited with every value the
+build could read. What remains a failure is a value the pipeline could not parse
+either.
 
 **Improving a rate by dropping rows.** A Silver build that deletes rows with
 nulls reports a better missing rate for a reason that has nothing to do with
@@ -55,12 +56,20 @@ both sides, so the two layers measure the same construct even though Bronze
 calls it ``대여소번호`` and Silver calls it ``station_code``. Those carry the
 layer-to-layer comparison.
 
-``duplicate_rate`` is **diagnostic**. Without a key it reads the whole row, and
-the two layers do not hold the same columns — Silver coalesces aliases away and
-adds derived fields — so the comparison space itself differs between them and a
-delta is not a paired inference. The number stays in the result schema because
-it is a real observation that found real things; what it does not do is settle
-H1 on its own. A change in it is read by tracing the record pairs behind it.
+``duplicate_rate`` is **diagnostic**, for a subtler reason. Given role-projected
+frames it is computed over the same roles on both sides, so the comparison space
+is no longer the problem. What remains is that it compares *stored values*:
+without a key it is exact-row equality over the frame, not over what
+``ColumnSpec.interpret`` made of it. Two records that mean the same thing but
+spell a missing gender ``\N`` in one row and ``""`` in the other are unequal in
+Bronze and equal in Silver, so canonicalization **raises** the rate by removing
+the difference that kept them apart.
+
+A rise is therefore not a regression and a fall is not an improvement; both are
+questions. The number stays in the result schema because it is a real
+observation that found real things — every change examined so far was the
+source's own duplicates becoming visible — but each one is settled by tracing
+the record pairs behind it, not by subtracting two layers.
 
 Missing and unreadable are counted separately throughout: an absent value and a
 corrupt one are different defects, and collapsing them would let a layer trade
@@ -104,8 +113,9 @@ H1_COMPARABLE_METRICS: tuple[str, ...] = (
 )
 
 #: Measured and stored, but not evidence for H1 on its own. See the module
-#: docstring: the comparison space differs between layers, so a delta here is
-#: something to explain rather than something that settles anything.
+#: docstring: it compares stored values rather than interpreted ones, so a
+#: delta here is something to explain rather than something that settles
+#: anything.
 H1_DIAGNOSTIC_METRICS: tuple[str, ...] = ("duplicate_rate",)
 
 #: Everything a :class:`QualityReport` can answer for. The result schema keeps
