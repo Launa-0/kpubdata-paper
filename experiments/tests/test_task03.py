@@ -171,8 +171,12 @@ class TestTransforms:
 
     def test_monthly_rent_contracts_are_not_jeonse(self) -> None:
         """월세 보증금은 전세보증금과 다른 양이다. 섞으면 전세가율이 아니다."""
-        rents = pd.Series([0.0, 150.0, None])
-        assert list(tf.is_jeonse(rents)) == [True, False, True]
+        rents = pd.Series([0.0, 150.0])
+        assert list(tf.is_jeonse(rents)) == [True, False]
+
+    def test_a_missing_monthly_rent_is_unknown_not_jeonse(self) -> None:
+        """결측을 0으로 채우면 없는 계약("생략된 0")을 코드에 새기는 것이다."""
+        assert list(tf.is_jeonse(pd.Series([None]))) == [False]
 
     def test_unit_price_does_not_diverge_on_zero_area(self) -> None:
         prices = tf.unit_price(pd.Series([120000.0]), pd.Series([0.0]))

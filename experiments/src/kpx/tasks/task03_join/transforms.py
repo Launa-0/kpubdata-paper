@@ -123,8 +123,12 @@ def is_jeonse(monthly_rent_10k: pd.Series) -> pd.Series:
 
     월세가 0인 계약만 전세다. 월세가 붙은 계약의 보증금은 전세보증금과 다른 양이라,
     섞어서 평균 내면 전세가율이 아니라 아무 의미 없는 수가 나온다.
+
+    결측은 전세가 아니라 **모름**이다. 0을 생략한 표기라는 계약 근거가 없으므로
+    전세로 세지 않는다. 현재 두 원천 모두 결측이 0건이라 이 구분은 지금의 숫자를
+    바꾸지 않지만, 결측이 하나라도 들어오는 순간 조용히 전세가율을 오염시킨다.
     """
-    return monthly_rent_10k.fillna(0) == 0
+    return monthly_rent_10k.eq(0)
 
 
 def unit_price(amount_10k: pd.Series, area_m2: pd.Series) -> pd.Series:
