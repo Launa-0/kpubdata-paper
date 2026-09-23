@@ -20,9 +20,12 @@ import json
 import secrets
 from datetime import UTC, datetime
 from pathlib import Path
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
-from kpubdata_builder.uploads.models import UploadMetadata
+# 빌더 import는 호출 시점으로 미룬다. 이 레포의 다른 빌드 스크립트와 같은 규약이고,
+# kpubdata-builder가 없는 환경에서도 모듈이 import는 되게 한다.
+if TYPE_CHECKING:
+    from kpubdata_builder.uploads.models import UploadMetadata
 
 
 class FileUploadRepository:
@@ -58,6 +61,8 @@ class FileUploadRepository:
     ) -> UploadMetadata:
         if max_bytes is not None and len(content) > max_bytes:
             raise ValueError(f"upload exceeds {max_bytes} bytes")
+        from kpubdata_builder.uploads.models import UploadMetadata
+
         upload_id = f"upl_{secrets.token_hex(16)}"
         metadata = UploadMetadata(
             upload_id=upload_id,
@@ -77,6 +82,8 @@ class FileUploadRepository:
         _, meta = self._paths(owner_id, upload_id)
         if not meta.exists():
             return None
+        from kpubdata_builder.uploads.models import UploadMetadata
+
         payload: dict[str, Any] = json.loads(meta.read_text(encoding="utf-8"))
         return UploadMetadata(**payload)
 
@@ -93,6 +100,8 @@ class FileUploadRepository:
         return True
 
     def list_for_owner(self, owner_id: str) -> list[UploadMetadata]:
+        from kpubdata_builder.uploads.models import UploadMetadata
+
         base = self._dir(owner_id)
         if not base.exists():
             return []
