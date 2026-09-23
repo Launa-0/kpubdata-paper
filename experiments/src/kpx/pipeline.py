@@ -518,3 +518,62 @@ def assert_same_inputs(builds: Iterable[Provenance]) -> None:
     versions = {build.inputs.pipeline_version for build in builds}
     if len(versions) > 1:
         raise ProvenanceError(f"builds used different pipeline versions: {sorted(versions)}")
+
+
+def bind_measured_artifact(
+    artifact: Path | str,
+    *,
+    spec: Mapping[str, Any],
+    store: ProvenanceStore,
+    layer: Layer = "silver",
+) -> Provenance:
+    """The recorded build that these bytes are, or an error naming the mismatch.
+
+    Declaring ``snapshot_id`` and ``run_id`` in a spec removed the guessing from
+    *which directory* to read. It did not establish that the directory still
+    holds what the declaration says: a stale artifact left under the same
+    ``run_id`` has the right path and the wrong contents, and every number
+    measured from it would be attributed to the current contract.
+
+    So the artifact is matched against provenance on all three axes that could
+    drift apart — the snapshot it claims to come from, the recipe that claims to
+    have produced it, and the bytes themselves. A measurement that cannot name
+    the build it read is not reproducible, whatever it prints.
+    """
+    from kpx.digest import digest_tree
+    from kpx.provenance import PROVENANCE_FILENAME, ProvenanceError
+
+    artifact = Path(artifact)
+    dataset = str(spec["dataset_id"])
+    snapshot_id = str(spec["snapshot_id"])
+    # 전체 해시로 비교한다. 12자는 ``pipeline_version`` 표기용 축약일 뿐이고,
+    # 기록에는 전체가 들어간다.
+    expected = config_hash(transformation_recipe(spec))
+
+    candidates = [
+        build
+        for build in store.list_builds(dataset, layer)
+        if build.inputs.snapshot_id == snapshot_id and build.inputs.config_hash == expected
+    ]
+    if not candidates:
+        recorded = {
+            (build.inputs.snapshot_id, build.inputs.config_hash[:CONFIG_HASH_PREFIX])
+            for build in store.list_builds(dataset, layer)
+        }
+        raise ProvenanceError(
+            f"no recorded {layer} build of {dataset} for snapshot {snapshot_id} at "
+            f"config {expected[:CONFIG_HASH_PREFIX]}; recorded: {sorted(recorded)}. "
+            "Register the build before measuring it, or the numbers name a recipe "
+            "nobody ran."
+        )
+
+    digest = digest_tree(artifact, exclude=frozenset({PROVENANCE_FILENAME, ".DS_Store"}))
+    for build in reversed(candidates):
+        if build.output_checksum == digest.sha256:
+            return build
+    raise ProvenanceError(
+        f"{artifact} does not match any recorded build: its checksum is "
+        f"{digest.sha256[:12]}…, recorded are "
+        f"{sorted(build.output_checksum[:12] for build in candidates)}. The path is "
+        "declared but the bytes are something else."
+    )
