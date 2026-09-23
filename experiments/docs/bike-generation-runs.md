@@ -368,3 +368,54 @@ git_commit  5d86eedf3a1ab80f1ac237d7d406e08fe51e745c   git_dirty  false
 config_hash f9f6813c9110
 status      G1 ok  G2 ok  I1 ok  G3 ok  T4 ok  /  G4 failed (coalesce / ym_raw)
 ```
+
+## RQ1 재측정 — 예측이 맞았다
+
+`quality_spectrum.py`를 이 빌드 위에서 다시 돌렸다. 위에서 적은 예측
+("`gender` 40.4%는 primary `missing_rate`가 아니다")을 실측이 확인한다.
+
+```
+seoul-bike-rent-month   Bronze 4,902,236행 x 16컬럼   Silver 4,902,236행 x 11컬럼
+
+              Metric   bronze   silver
+    type_consistency 0.999285 1.000000
+        missing_rate 0.000000 0.000000      <- required 기준, 양쪽 0
+      duplicate_rate 0.000000 0.000004
+  schema_conformance 1.000000 1.000000
+parsing_failure_rate 0.000000 0.000000
+```
+
+`gender`의 40.4%는 per-column 진단표에만 나타난다.
+
+```
+       Column    kind  bronze_missing  silver_missing
+       gender    text             0.0        0.404118
+    carbon_kg numeric             0.0        0.001072
+exercise_kcal numeric             0.0        0.001072
+```
+
+Bronze의 `gender_missing`이 0인 것이 핵심이다. Bronze는 **저장된 표현 그대로**
+읽으므로 `\N`과 `""`가 둘 다 "값"이다. 결측은 Silver가 만든 것이 아니라 Silver가
+**말한** 것이다.
+
+`duplicate_rate` 0.000004 = 22 / 4,902,236으로, 앞에서 쌍 단위로 확인한 22와 같다.
+
+### 한 가지 단서 — Bronze와 Silver의 컬럼 집합이 다르다
+
+`duplicate_rate`는 key 없이 전체 행으로 센다. Bronze는 16컬럼(세대별 별칭이 모두
+펼쳐진 합집합), Silver는 11컬럼(coalesce 이후)이라 **같은 잣대가 아니다.**
+
+따릉이에서는 이것이 이 숫자를 흔들지 않는다. 22쌍은 전부 한 세대 안에서 나오고,
+한 세대 안에서는 해당 없는 별칭 컬럼이 모든 행에서 똑같이 비어 있어 컬럼을 줄여도
+새 중복이 생기지 않는다. 쌍을 직접 확인했고 차이는 `성별` 하나뿐이었다.
+
+전월세·실거래가에서는 반대 방향이라 더 분명하다. 컬럼이 오히려 **늘어나는데도**
+(25→26, 32→33) duplicate가 증가한다.
+
+```
+seoul-apartment-rent    duplicate_rate  0.041179 -> 0.043263
+seoul-apartment-trades  duplicate_rate  0.008669 -> 0.008694
+```
+
+컬럼이 늘면 중복은 더 어려워지므로, 이 증가는 컬럼 집합 변화로 설명되지 않는다.
+세 데이터셋에서 같은 방향이 나온다는 것이 canonicalization 해석을 뒷받침한다.
