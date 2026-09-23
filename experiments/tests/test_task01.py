@@ -9,7 +9,7 @@ from __future__ import annotations
 import pandas as pd
 import pytest
 
-from kpx.contract import RunContext
+from kpx.contract import AnalysisInput, RunContext
 from kpx.tasks.task01_price_analysis import analysis, bronze, gold, monolithic, silver
 from kpx.tasks.task01_price_analysis import transforms as tf
 
@@ -121,8 +121,87 @@ class TestAnalysis:
         # 유리해진다. Gold는 집계까지만, 그 위는 분석의 몫이다 (Internal Validity).
         prepared = gold.Runner().prepare(_context("gold"))
 
-        assert "yoy_growth" not in prepared.frame.columns
+        assert "mean_price_yoy_change" not in prepared.frame.columns
 
         output = analysis.analyze(prepared)
 
-        assert "yoy_growth" in output.result.columns
+        assert "mean_price_yoy_change" in output.result.columns
+
+
+class TestAggregationIsIndependentOfPreCleaning:
+    """집계가 쓸 수 없는 행을 스스로 걸러야 네 조건이 같은 곳에 도착한다.
+
+    Bronze와 Monolithic은 집계 전에 dropna를 한다 — 분석자가 그 단계를 직접 짜야
+    하는 것이 RQ2가 재는 비용이다. Silver와 Gold는 하지 않는다. 그런데 집계가
+    쓸 수 없는 행을 그대로 세면 같은 데이터에서 조건마다 다른 결과가 나온다.
+
+    이번 스냅샷에서 해시가 일치한 것은 결측이 하나도 없었기 때문이지 설계가
+    보장해서가 아니었다.
+    """
+
+    @staticmethod
+    def _frame() -> pd.DataFrame:
+        return pd.DataFrame(
+            {
+                "district_code": ["11110", "11110", "11140", "11140"],
+                "year_month": ["2020-01", "2020-01", "2020-02", "2020-02"],
+                "price_per_m2": [100.0, None, None, None],
+            }
+        )
+
+    def test_n_deals_counts_usable_rows_not_every_row(self) -> None:
+        aggregated = tf.aggregate_by_district_month(self._frame())
+
+        assert aggregated.loc[0, "n_deals"] == 1
+
+    def test_a_district_month_with_nothing_usable_does_not_appear(self) -> None:
+        aggregated = tf.aggregate_by_district_month(self._frame())
+
+        assert list(aggregated["district_code"]) == ["11110"]
+
+    def test_pre_dropping_changes_nothing(self) -> None:
+        frame = self._frame()
+        pre_dropped = frame.dropna(subset=["district_code", "year_month", "price_per_m2"])
+
+        pd.testing.assert_frame_equal(
+            tf.aggregate_by_district_month(frame),
+            tf.aggregate_by_district_month(pre_dropped),
+        )
+
+
+class TestYearOnYearNeedsTheActualPreviousYear:
+    """12행 전이 전년 동월이라는 보장은 없다.
+
+    거래가 없는 달은 집계에 행이 생기지 않는다. 위치로 12를 세면 그 구멍만큼
+    어긋난 달과 비교하게 되고, 결과는 조용히 틀린다.
+    """
+
+    @staticmethod
+    def _prepared(months: list[str], values: list[float]) -> AnalysisInput:
+        return AnalysisInput(
+            frame=pd.DataFrame(
+                {
+                    "district_code": ["11110"] * len(months),
+                    "year_month": months,
+                    "mean_price_per_m2": values,
+                    "n_deals": [1] * len(months),
+                }
+            )
+        )
+
+    def test_a_missing_month_does_not_shift_the_comparison(self) -> None:
+        months = [f"2020-{m:02d}" for m in range(1, 13)]
+        # 2021-01은 빠지고 2021-02만 있다. 위치로 12를 세면 2020-12와 비교한다.
+        months += ["2021-02"]
+        values = [100.0] * 12 + [110.0]
+
+        result = analysis.analyze(self._prepared(months, values)).result
+        row = result[result["year_month"] == "2021-02"].iloc[0]
+
+        # 2020-02가 기준이어야 한다. 그 값도 100.0이므로 0.10이 맞다.
+        assert row["mean_price_yoy_change"] == pytest.approx(0.10)
+
+    def test_a_month_without_its_previous_year_has_no_value(self) -> None:
+        result = analysis.analyze(self._prepared(["2020-01", "2020-02"], [100.0, 110.0])).result
+
+        assert result["mean_price_yoy_change"].isna().all()

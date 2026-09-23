@@ -82,9 +82,18 @@ def aggregate_by_district_month(frame: pd.DataFrame) -> pd.DataFrame:
 
     네 조건이 도달해야 하는 공통 모양이다. Gold 조건은 이 집계를 이미 갖고
     시작하고, 나머지 셋은 여기까지 스스로 와야 한다.
+
+    쓸 수 없는 행은 여기서 버린다. Bronze와 Monolithic은 집계 전에 직접 버리고
+    — 그 단계를 짜는 것이 RQ2가 재는 비용이다 — Silver와 Gold는 그러지 않는다.
+    그 차이가 결과에 남으면 조건 간 비교가 준비 과정이 아니라 정제 규칙의 차이를
+    재게 된다. 그래서 버리는 일을 네 조건이 모두 통과하는 이 한 곳에 둔다.
+
+    ``n_deals``는 ``size``가 아니라 ``count``다. 크기를 세면 값이 없는 행까지
+    거래로 집계된다.
     """
-    grouped = frame.groupby(["district_code", "year_month"], as_index=False).agg(
-        n_deals=("price_per_m2", "size"),
+    usable = frame.dropna(subset=["price_per_m2"])
+    grouped = usable.groupby(["district_code", "year_month"], as_index=False).agg(
+        n_deals=("price_per_m2", "count"),
         mean_price_per_m2=("price_per_m2", "mean"),
         median_price_per_m2=("price_per_m2", "median"),
     )
