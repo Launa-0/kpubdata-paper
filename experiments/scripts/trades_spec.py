@@ -43,7 +43,8 @@ SPEC: dict[str, Any] = {
                 "jibun",
             )
         },
-        "required": ("district_code", "apt_name", "price_10k_krw", "deal_date"),
+        # docs/required-columns.md: 식별자 + 시점 + 주된 사실.
+        "required": ("district_code", "apt_name", "deal_date", "area_m2", "price_10k_krw"),
         "rename": {
             "sggCd": "district_code",
             "umdNm": "neighborhood",

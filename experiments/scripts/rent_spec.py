@@ -39,7 +39,14 @@ SPEC: dict[str, Any] = {
                 "monthlyRent",
             )
         },
-        "required": ("district_code", "apt_name", "deposit_10k_krw", "contract_date"),
+        # docs/required-columns.md: 식별자 + 시점 + 주된 사실.
+        "required": (
+            "district_code",
+            "apt_name",
+            "contract_date",
+            "area_m2",
+            "deposit_10k_krw",
+        ),
         "rename": {
             "sggCd": "district_code",
             "umdNm": "neighborhood",
