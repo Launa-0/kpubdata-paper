@@ -394,9 +394,13 @@ parsing_failure_rate 0.000000 0.000000
 exercise_kcal numeric             0.0        0.001072
 ```
 
-Bronze의 `gender_missing`이 0인 것이 핵심이다. Bronze는 **저장된 표현 그대로**
-읽으므로 `\N`과 `""`가 둘 다 "값"이다. 결측은 Silver가 만든 것이 아니라 Silver가
-**말한** 것이다.
+Bronze의 `gender_missing`이 0인 것이 핵심이다. 다만 이것을 "Bronze에 결측이
+없었다"로 읽으면 안 된다. Bronze는 **저장된 표현 그대로** 읽으므로 `\N`과 `""`가
+아직 결측으로 **해석되지 않았을** 뿐이다. Silver의 40.4%도 새 결측을 생성한 것이
+아니라 원천 표현을 canonical null로 해석한 결과다.
+
+그러므로 이 변화는 completeness가 나빠진 것이 아니라 **missingness의 observability가
+높아진 것**이다. 논문에서 이 둘을 섞어 쓰면 Silver가 데이터를 망친 것처럼 읽힌다.
 
 `duplicate_rate` 0.000004 = 22 / 4,902,236으로, 앞에서 쌍 단위로 확인한 22와 같다.
 
