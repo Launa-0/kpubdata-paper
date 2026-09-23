@@ -64,6 +64,8 @@ from _paths import DEFAULT_WORK_ROOT, SNAPSHOTS  # noqa: E402
 
 from kpx.datasets import read_artifact  # noqa: E402
 from kpx.metrics.quality import (  # noqa: E402
+    H1_COMPARABLE_METRICS,
+    H1_DIAGNOSTIC_METRICS,
     TABLE2_METRICS,
     ColumnSpec,
     QualityReport,
@@ -213,24 +215,33 @@ def main(argv: list[str] | None = None) -> int:
             "bronze": measure_quality(bronze, b_spec, layer="bronze"),
             "silver": measure_quality(silver, s_spec, layer="silver"),
         }
-        print("\n  -- row-level (H1 primary) --")
+        print("\n  -- row-level (H1 comparable) --")
         print(
             pd.DataFrame(
                 [
                     {"Metric": m, **{k: r.metric(m) for k, r in reports.items()}}
-                    for m in TABLE2_METRICS
+                    for m in H1_COMPARABLE_METRICS
                 ]
             ).to_string(index=False, na_rep="—")
         )
-        # duplicate_rate는 key 없이 전체 행으로 센다. 두 계층의 컬럼 집합이 다르면
-        # 계층 간 차이를 그대로 품질 변화로 읽을 수 없다 — 컬럼이 줄어드는 것만으로도
-        # 중복은 늘 수 있다. 진단값이라는 사실을 표 옆에 적어 둔다. 표만 보는 사람에게
-        # docstring은 닿지 않는다.
+        # 진단 지표는 한 표 안에 섞지 않는다. 나란히 찍으면 두 열을 빼는 읽기를
+        # 부르는데, duplicate_rate는 그 읽기를 지탱하지 못한다 — key 없이 전체 행으로
+        # 세고 두 계층의 컬럼 집합이 다르므로 비교 공간 자체가 다르다.
+        print("\n  -- row-level (diagnostic, H1 증거로 쓰지 않는다) --")
+        print(
+            pd.DataFrame(
+                [
+                    {"Metric": m, **{k: r.metric(m) for k, r in reports.items()}}
+                    for m in H1_DIAGNOSTIC_METRICS
+                ]
+            ).to_string(index=False, na_rep="—")
+        )
+        # 표만 보는 사람에게 docstring은 닿지 않는다. 왜 진단값인지를 그 자리에 적는다.
         if bronze.shape[1] != silver.shape[1]:
             print(
-                f"     [!] duplicate_rate는 진단값이다 — 전체 행으로 세는데 Bronze "
-                f"{bronze.shape[1]}컬럼 / Silver {silver.shape[1]}컬럼으로 잣대가 다르다. "
-                "차이는 레코드 쌍을 직접 확인하고 해석한다."
+                f"     [!] Bronze {bronze.shape[1]}컬럼 / Silver {silver.shape[1]}컬럼 — "
+                "전체 행 일치의 비교 공간이 다르다. 컬럼이 줄어드는 것만으로도 중복은 "
+                "늘 수 있다. 차이는 레코드 쌍을 직접 확인하고 해석한다."
             )
 
         b_cols = per_column(bronze, b_spec)

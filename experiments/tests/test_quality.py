@@ -4,6 +4,8 @@ import pandas as pd
 import pytest
 
 from kpx.metrics.quality import (
+    H1_COMPARABLE_METRICS,
+    H1_DIAGNOSTIC_METRICS,
     TABLE2_METRICS,
     ColumnSpec,
     QualityError,
@@ -13,6 +15,7 @@ from kpx.metrics.quality import (
     figure3_data,
     measure_quality,
     table2,
+    table2_diagnostics,
 )
 
 SEOUL_CODES = frozenset({"11110", "11140", "11170"})
@@ -321,3 +324,31 @@ def test_figure3_data_omits_metrics_a_layer_does_not_report() -> None:
         {"silver": measure_quality(silver_frame()[["price_krw"]], spec, layer="silver")}
     )  # type: ignore[arg-type]
     assert "code_validity" not in set(data["metric"])
+
+
+# -- comparable vs diagnostic ----------------------------------------------
+
+
+def test_table2_leaves_the_diagnostic_metric_out() -> None:
+    """나란히 찍으면 두 열을 빼는 읽기를 부른다. duplicate는 그것을 지탱하지 못한다."""
+    assert "duplicate_rate" not in set(table2(reports())["Metric"])  # type: ignore[arg-type]
+
+
+def test_diagnostics_report_the_value_without_an_improvement_column() -> None:
+    table = table2_diagnostics(reports())  # type: ignore[arg-type]
+    assert set(table["Metric"]) == set(H1_DIAGNOSTIC_METRICS)
+    assert not [c for c in table.columns if c.endswith("_improvement")]
+
+
+def test_figure3_plots_comparable_metrics_only_unless_asked() -> None:
+    """막대를 나란히 두면 독자가 비교한다 — 호출자가 쓰지 않은 주장이 생긴다."""
+    assert "duplicate_rate" not in set(figure3_data(reports())["metric"])  # type: ignore[arg-type]
+    asked = figure3_data(reports(), metrics=H1_DIAGNOSTIC_METRICS)  # type: ignore[arg-type]
+    assert set(asked["metric"]) == {"duplicate_rate"}
+
+
+def test_the_result_schema_still_carries_every_metric() -> None:
+    """표시에서 내린 것이지 버린 것이 아니다."""
+    assert set(TABLE2_METRICS) == set(H1_COMPARABLE_METRICS) | set(H1_DIAGNOSTIC_METRICS)
+    report = measure_quality(silver_frame(), silver_spec(), layer="silver")
+    assert "duplicate_rate" in report.to_dict()

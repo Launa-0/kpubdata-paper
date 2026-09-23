@@ -377,12 +377,16 @@ status      G1 ok  G2 ok  I1 ok  G3 ok  T4 ok  /  G4 failed (coalesce / ym_raw)
 ```
 seoul-bike-rent-month   Bronze 4,902,236행 x 16컬럼   Silver 4,902,236행 x 11컬럼
 
+-- row-level (H1 comparable) --
               Metric   bronze   silver
     type_consistency 0.999285 1.000000
         missing_rate 0.000000 0.000000      <- required 기준, 양쪽 0
-      duplicate_rate 0.000000 0.000004
   schema_conformance 1.000000 1.000000
 parsing_failure_rate 0.000000 0.000000
+
+-- row-level (diagnostic, H1 증거로 쓰지 않는다) --
+              Metric   bronze   silver
+      duplicate_rate 0.000000 0.000004
 ```
 
 `gender`의 40.4%는 per-column 진단표에만 나타난다.
@@ -404,10 +408,19 @@ Bronze의 `gender_missing`이 0인 것이 핵심이다. 다만 이것을 "Bronze
 
 `duplicate_rate` 0.000004 = 22 / 4,902,236으로, 앞에서 쌍 단위로 확인한 22와 같다.
 
-### 한 가지 단서 — Bronze와 Silver의 컬럼 집합이 다르다
+### duplicate_rate는 비교 지표가 아니다
 
-`duplicate_rate`는 key 없이 전체 행으로 센다. Bronze는 16컬럼(세대별 별칭이 모두
-펼쳐진 합집합), Silver는 11컬럼(coalesce 이후)이라 **같은 잣대가 아니다.**
+key 없이 전체 행으로 센다. Bronze는 16컬럼(세대별 별칭이 모두 펼쳐진 합집합),
+Silver는 11컬럼(coalesce 이후)이라 **비교 공간 자체가 다르다.** 컬럼이 줄어드는
+것만으로도 중복은 늘 수 있으므로, 두 계층의 값을 빼서 품질 변화로 읽을 수 없다.
+
+그래서 저장은 하되 표시에서 분리했다 — `H1_COMPARABLE_METRICS`와
+`H1_DIAGNOSTIC_METRICS`로 나누고, 진단표에는 improvement 열을 아예 두지 않는다.
+결과 parquet에는 여섯 지표가 그대로 남는다. **버린 것이 아니라 해석 수준을
+낮춘 것이다.**
+
+비교 가능한 지표는 `QualitySpec`이 양쪽에 같은 role을 선언하므로 컬럼명이
+달라도(`대여소번호` / `station_code`) 같은 construct를 잰다. 이 차이가 핵심이다.
 
 따릉이에서는 이것이 이 숫자를 흔들지 않는다. 22쌍은 전부 한 세대 안에서 나오고,
 한 세대 안에서는 해당 없는 별칭 컬럼이 모든 행에서 똑같이 비어 있어 컬럼을 줄여도

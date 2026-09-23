@@ -45,6 +45,23 @@ The metrics
                            required value
 =========================  ====================================================
 
+Comparable and diagnostic
+-------------------------
+
+All six are measured and all six are stored. They are not all evidence for H1.
+
+A metric is **comparable** when a :class:`QualitySpec` states the same role on
+both sides, so the two layers measure the same construct even though Bronze
+calls it ``대여소번호`` and Silver calls it ``station_code``. Those carry the
+layer-to-layer comparison.
+
+``duplicate_rate`` is **diagnostic**. Without a key it reads the whole row, and
+the two layers do not hold the same columns — Silver coalesces aliases away and
+adds derived fields — so the comparison space itself differs between them and a
+delta is not a paired inference. The number stays in the result schema because
+it is a real observation that found real things; what it does not do is settle
+H1 on its own. A change in it is read by tracing the record pairs behind it.
+
 Missing and unreadable are counted separately throughout: an absent value and a
 corrupt one are different defects, and collapsing them would let a layer trade
 one for the other silently.
@@ -74,14 +91,26 @@ HIGHER_IS_BETTER: frozenset[str] = frozenset(
     {"type_consistency", "schema_conformance", "code_validity"}
 )
 
-TABLE2_METRICS: tuple[str, ...] = (
+#: The layer-to-layer comparison. Each one is stated as a role that both layers
+#: fill, so the two sides measure the same construct under different column
+#: names. ``code_validity`` belongs here whenever a reference code list exists;
+#: where none does it is simply ``None`` and drops out of the table.
+H1_COMPARABLE_METRICS: tuple[str, ...] = (
     "type_consistency",
     "missing_rate",
-    "duplicate_rate",
     "schema_conformance",
     "code_validity",
     "parsing_failure_rate",
 )
+
+#: Measured and stored, but not evidence for H1 on its own. See the module
+#: docstring: the comparison space differs between layers, so a delta here is
+#: something to explain rather than something that settles anything.
+H1_DIAGNOSTIC_METRICS: tuple[str, ...] = ("duplicate_rate",)
+
+#: Everything a :class:`QualityReport` can answer for. The result schema keeps
+#: all of it — separating presentation from storage is the point.
+TABLE2_METRICS: tuple[str, ...] = H1_COMPARABLE_METRICS + H1_DIAGNOSTIC_METRICS
 
 
 class QualityError(ValueError):
@@ -237,6 +266,10 @@ def table2(reports: Mapping[Layer, QualityReport], *, baseline: Layer = "bronze"
 
     The row counts are printed as the first row, so a missing rate improved by
     dropping rows is visible in the same glance as the improvement.
+
+    Only :data:`H1_COMPARABLE_METRICS` appear here. ``duplicate_rate`` is
+    reported by :func:`table2_diagnostics`, which prints no improvement column
+    at all — a signed delta is exactly the reading that metric cannot support.
     """
     if baseline not in reports:
         raise QualityError(f"no report for the baseline layer {baseline!r}")
@@ -245,7 +278,7 @@ def table2(reports: Mapping[Layer, QualityReport], *, baseline: Layer = "bronze"
     rows: list[dict[str, Any]] = [
         {"Metric": "rows"} | {str(layer): float(reports[layer].rows) for layer in layers}
     ]
-    for name in TABLE2_METRICS:
+    for name in H1_COMPARABLE_METRICS:
         values: dict[str, Any] = {str(layer): reports[layer].metric(name) for layer in layers}
         if all(value is None for value in values.values()):
             continue
@@ -261,17 +294,41 @@ def table2(reports: Mapping[Layer, QualityReport], *, baseline: Layer = "bronze"
     return frame
 
 
-def figure3_data(reports: Mapping[Layer, QualityReport]) -> pd.DataFrame:
+def table2_diagnostics(reports: Mapping[Layer, QualityReport]) -> pd.DataFrame:
+    """The diagnostic metrics, per layer, with no improvement column.
+
+    Separate from :func:`table2` because printing them side by side under one
+    heading is what invites "duplicates improved by X" — the one reading the
+    measurement does not support. The values are here in full; only the
+    invitation to subtract them is gone.
+    """
+    layers = list(reports)
+    rows = [
+        {"Metric": name} | {str(layer): reports[layer].metric(name) for layer in layers}
+        for name in H1_DIAGNOSTIC_METRICS
+    ]
+    return pd.DataFrame([row for row in rows if any(v is not None for v in list(row.values())[1:])])
+
+
+def figure3_data(
+    reports: Mapping[Layer, QualityReport],
+    *,
+    metrics: tuple[str, ...] = H1_COMPARABLE_METRICS,
+) -> pd.DataFrame:
     """Tidy ``(metric, layer, value)`` rows for Figure 3 (Quality Improvement).
 
     Long rather than wide because every plotting library wants it that way, and
     because a metric that a layer does not report is simply absent instead of
     becoming a null that has to be explained.
+
+    Defaults to the comparable metrics. A figure puts bars next to each other
+    and the reader compares them, so a diagnostic metric plotted there makes a
+    claim the caller never wrote. Pass ``metrics`` to plot one deliberately.
     """
     rows = [
         {"metric": name, "layer": layer, "value": value}
         for layer, report in reports.items()
-        for name in TABLE2_METRICS
+        for name in metrics
         if (value := report.metric(name)) is not None
     ]
     return pd.DataFrame(rows, columns=["metric", "layer", "value"])
