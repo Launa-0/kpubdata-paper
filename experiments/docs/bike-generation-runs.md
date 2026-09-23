@@ -369,70 +369,123 @@ config_hash f9f6813c9110
 status      G1 ok  G2 ok  I1 ok  G3 ok  T4 ok  /  G4 failed (coalesce / ym_raw)
 ```
 
-## RQ1 재측정 — 예측이 맞았다
+## RQ1 재측정 — 예측은 맞았고, H1 헤드라인은 사라졌다
 
 `quality_spectrum.py`를 이 빌드 위에서 다시 돌렸다. 위에서 적은 예측
 ("`gender` 40.4%는 primary `missing_rate`가 아니다")을 실측이 확인한다.
+그리고 같이 고친 두 가지 — 비교 단위를 컬럼에서 **role**로 바꾼 것과, Bronze를
+계약의 파서로 한 번 더 읽은 것 — 이 H1의 원래 주장을 무너뜨렸다.
+
+### 어느 빌드를 쟀는지가 출력에 박힌다
+
+측정은 이제 스냅샷·config_hash·output_checksum을 provenance와 대조해 build_id를
+확정한 뒤에 시작한다. 하나라도 어긋나면 표를 찍지 않고 멈춘다.
 
 ```
-seoul-bike-rent-month   Bronze 4,902,236행 x 16컬럼   Silver 4,902,236행 x 11컬럼
-
--- row-level (H1 comparable) --
-              Metric   bronze   silver
-    type_consistency 0.999285 1.000000
-        missing_rate 0.000000 0.000000      <- required 기준, 양쪽 0
-  schema_conformance 1.000000 1.000000
-parsing_failure_rate 0.000000 0.000000
-
--- row-level (diagnostic, H1 증거로 쓰지 않는다) --
-              Metric   bronze   silver
-      duplicate_rate 0.000000 0.000004
+seoul-apartment-trades  build cdee737a1efd46f6  0.4.0.dev0+5d86eedf3a1a+226f0ff82769
+seoul-apartment-rent    build 50c1bf157cbba602  0.4.0.dev0+5d86eedf3a1a+e65edbfc1f6d
+seoul-bike-rent-month   build 7184f2ccba910a4f  0.4.0.dev0+5d86eedf3a1a+f9f6813c9110
 ```
+
+### Bronze를 두 번 읽는다
+
+같은 artifact에 대한 두 개의 **측정 view**지 두 개의 condition이 아니다.
+
+- **Bronze (semantic)** — 계약이 선언한 cast를 그대로 적용해 읽는다. 빌드가 그
+  바이트를 읽은 방식이다. H1의 primary.
+- **Bronze (naive)** — 계약 파서 없이 pandas 기본 해석으로 읽는다. 준비 없이
+  들어온 분석자가 마주하는 것이다. 데이터 품질이 아니라 준비 비용이므로 RQ2와
+  같이 읽는다.
+
+측정 쪽 파서는 빌더에 맞춘다. polars `Int64(strict=False)`는 `"12.0"`도 `" 7 "`도
+버리고, 쉼표와 공백을 터는 것은 `int_comma`/`float_comma`뿐이다. 측정이 빌더보다
+관대하면 Bronze가 빌드가 실제로 본 것보다 깨끗해 보인다 — Bronze에 적대적인
+파서를 주는 것과 방향만 반대인 같은 편향이다.
+
+### 결과: 비교 지표가 전부 평평하다
+
+```
+               Dataset  Roles  Required type_consistency   missing_rate schema_conformance parsing_failure_rate
+seoul-apartment-trades     21         5   1.000 -> 1.000 0.000 -> 0.000     1.000 -> 1.000       0.000 -> 0.000
+  seoul-apartment-rent     18         5   1.000 -> 1.000 0.000 -> 0.000     1.000 -> 1.000       0.000 -> 0.000
+ seoul-bike-rent-month     11         3   1.000 -> 1.000 0.000 -> 0.000     1.000 -> 1.000       0.000 -> 0.000
+```
+
+양쪽에 같은 해석 능력을 주면 세 데이터셋 모두 H1 비교 지표가 동률이다. 예전의
+`1.000 -> 0.000`, `0.000 -> 1.000`은 데이터의 성질이 아니라 Bronze에만 적대적인
+reader를 준 결과였다. **이것이 정직한 결과이므로 그대로 둔다. 고칠 것은 숫자가
+아니라 주장이다.**
+
+naive view에는 그 숫자가 그대로 남는다.
+
+```
+seoul-apartment-rent    parsing_failure_rate  Bronze(naive) 0.988238  vs  Bronze(semantic) 0.000
+                        schema_conformance    Bronze(naive) 0.011762  vs  Bronze(semantic) 1.000
+                        type_consistency      Bronze(naive) 0.890133  vs  Bronze(semantic) 1.000
+seoul-apartment-trades  parsing_failure_rate  Bronze(naive) 1.000     vs  Bronze(semantic) 0.000
+```
+
+그러므로 RQ1의 주장은 "Silver가 원천의 오류를 고쳤다"가 아니다. **차이는 데이터에
+있지 않고 해석 로직을 누가 갖고 있느냐에 있다** — Bronze에서는 분석자가, Silver에서는
+파이프라인이 갖는다. Silver가 없애는 것은 오류가 아니라 반복되는 해석 비용이다.
+
+유일하게 남은 실질적 차이는 따릉이의 `type_consistency` 0.999571 -> 1.000이다.
+per-column을 보면 `carbon_kg`/`exercise_kcal`에서 Bronze parse fail 0.001072가
+Silver missing 0.001072로 그대로 넘어간다. 계약의 파서로도 읽히지 않는 값을
+Silver가 null로 확정한 것이다. 규모는 0.1%다.
+
+### role로 비교한다
+
+예전 계획은 `rename`과 `casts`만 보고 `Bronze 컬럼 -> Silver 컬럼`을 맞췄다.
+`coalesce`(`대여일자` **또는** `대여년월` -> `ym_raw`)와 `derived`(세 조각에서
+만든 `deal_date`)를 표현할 수 없었고, 못 찾은 role을 Bronze 쪽에서 조용히
+빼 버려 두 계층이 다른 분모 위에서 측정됐다. 따릉이는 required 2개 대 3개,
+실거래가·전월세는 4개 대 5개였다.
+
+이제 role은 한 번 선언되고 계층별 producer를 갖는다 — `direct` / `coalesce` /
+`parts`. 투영 뒤 두 계층이 같은 컬럼을 갖고, 남는 비대칭은 선언 버그로 예외를
+던진다. required는 5 / 5 / 3으로 맞다.
+
+### gender 40.4%
 
 `gender`의 40.4%는 per-column 진단표에만 나타난다.
 
 ```
-       Column    kind  bronze_missing  silver_missing
-       gender    text             0.0        0.404118
-    carbon_kg numeric             0.0        0.001072
-exercise_kcal numeric             0.0        0.001072
+       Role    kind  bronze_missing  silver_missing
+     gender    text             0.0        0.404118
+  carbon_kg numeric             0.0        0.001072
 ```
 
 Bronze의 `gender_missing`이 0인 것이 핵심이다. 다만 이것을 "Bronze에 결측이
-없었다"로 읽으면 안 된다. Bronze는 **저장된 표현 그대로** 읽으므로 `\N`과 `""`가
-아직 결측으로 **해석되지 않았을** 뿐이다. Silver의 40.4%도 새 결측을 생성한 것이
-아니라 원천 표현을 canonical null로 해석한 결과다.
+없었다"로 읽으면 안 된다. `\N`과 `""`가 아직 결측으로 **해석되지 않았을** 뿐이다.
+Silver의 40.4%도 새 결측을 생성한 것이 아니라 원천 표현을 canonical null로
+해석한 결과다.
 
 그러므로 이 변화는 completeness가 나빠진 것이 아니라 **missingness의 observability가
 높아진 것**이다. 논문에서 이 둘을 섞어 쓰면 Silver가 데이터를 망친 것처럼 읽힌다.
 
-`duplicate_rate` 0.000004 = 22 / 4,902,236으로, 앞에서 쌍 단위로 확인한 22와 같다.
-
 ### duplicate_rate는 비교 지표가 아니다
 
-key 없이 전체 행으로 센다. Bronze는 16컬럼(세대별 별칭이 모두 펼쳐진 합집합),
-Silver는 11컬럼(coalesce 이후)이라 **비교 공간 자체가 다르다.** 컬럼이 줄어드는
-것만으로도 중복은 늘 수 있으므로, 두 계층의 값을 빼서 품질 변화로 읽을 수 없다.
+`duplicate_rate` 0.000004 = 22 / 4,902,236으로, 앞에서 쌍 단위로 확인한 22와 같다.
+
+role 투영 이후로는 "두 계층의 컬럼 집합이 다르다"가 더 이상 이유가 아니다.
+양쪽 다 같은 role 위에서 센다. 남는 이유는 더 미묘하다 — key가 없으므로 이것은
+**저장 표현 위의 exact-row equality**이지 `interpret`이 만든 값 위의 equality가
+아니다. 같은 것을 뜻하지만 결측 성별을 한 행은 `\N`으로 다른 행은 `""`로 적은 두
+행은 Bronze에서 다르고 Silver에서 같다. canonicalization이 그 차이를 지우면서
+rate를 **올린다.**
+
+```
+seoul-bike-rent-month   duplicate_rate  0.000000 -> 0.000004
+seoul-apartment-rent    duplicate_rate  0.041595 -> 0.043701
+seoul-apartment-trades  duplicate_rate  0.008853 -> 0.008990
+```
+
+세 데이터셋 모두 같은 방향이다. 상승이 악화가 아니고 하락이 개선이 아니므로,
+두 계층의 값을 빼서 품질 변화로 읽을 수 없다. 따릉이 22쌍을 직접 열어 확인했고
+차이는 `성별` 하나뿐이었다 — 정확히 이 메커니즘이다.
 
 그래서 저장은 하되 표시에서 분리했다 — `H1_COMPARABLE_METRICS`와
 `H1_DIAGNOSTIC_METRICS`로 나누고, 진단표에는 improvement 열을 아예 두지 않는다.
 결과 parquet에는 여섯 지표가 그대로 남는다. **버린 것이 아니라 해석 수준을
 낮춘 것이다.**
-
-비교 가능한 지표는 `QualitySpec`이 양쪽에 같은 role을 선언하므로 컬럼명이
-달라도(`대여소번호` / `station_code`) 같은 construct를 잰다. 이 차이가 핵심이다.
-
-따릉이에서는 이것이 이 숫자를 흔들지 않는다. 22쌍은 전부 한 세대 안에서 나오고,
-한 세대 안에서는 해당 없는 별칭 컬럼이 모든 행에서 똑같이 비어 있어 컬럼을 줄여도
-새 중복이 생기지 않는다. 쌍을 직접 확인했고 차이는 `성별` 하나뿐이었다.
-
-전월세·실거래가에서는 반대 방향이라 더 분명하다. 컬럼이 오히려 **늘어나는데도**
-(25→26, 32→33) duplicate가 증가한다.
-
-```
-seoul-apartment-rent    duplicate_rate  0.041179 -> 0.043263
-seoul-apartment-trades  duplicate_rate  0.008669 -> 0.008694
-```
-
-컬럼이 늘면 중복은 더 어려워지므로, 이 증가는 컬럼 집합 변화로 설명되지 않는다.
-세 데이터셋에서 같은 방향이 나온다는 것이 canonicalization 해석을 뒷받침한다.
