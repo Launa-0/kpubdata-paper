@@ -1,0 +1,37 @@
+{
+  "build_id": "6fdd17c3819635ca",
+  "built_at": "2026-09-23T13:51:44.481378+09:00",
+  "columns": [
+    "district_code",
+    "year_month",
+    "n_deals",
+    "mean_price_per_m2",
+    "median_price_per_m2"
+  ],
+  "environment": {
+    "packages": {
+      "numpy": "2.5.3",
+      "pandas": "3.0.6",
+      "pyarrow": "25.0.1",
+      "scikit-learn": "1.9.1",
+      "scipy": "1.18.1"
+    },
+    "platform": "Windows-11-10.0.22000-SP0",
+    "python_version": "3.13.2"
+  },
+  "inputs": {
+    "config_hash": "d1fb40ecc8892cec243159491d9955067ff58913791993e305b1ffccefac99f1",
+    "dataset": "seoul-apartment-trades",
+    "layer": "gold",
+    "pipeline_version": "0.1.0+7d72b8b966e0",
+    "snapshot_id": "seoul-apartment-trades/20260922-6660c8e25162",
+    "upstream_build_id": "baa3b3e98f65125d"
+  },
+  "kpx_version": "0.1.0",
+  "output_checksum": "9dad950c82e132def37a9cf3381f19d1de059751318be20421307240132b64f2",
+  "output_file_count": 1,
+  "output_size_bytes": 35588,
+  "row_count": 1500,
+  "schema_version": 1,
+  "status": "ok"
+}
