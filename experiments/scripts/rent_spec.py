@@ -6,61 +6,78 @@
 
 **같은 기관의 같은 주제 API 둘이 서로 다른 표현을 쓴다** — T3가 통합 과제인 이유이고,
 Bronze 조건이 치러야 할 비용이 어디서 오는지이기도 하다.
+
+계약은 ``SPEC`` 한 벌로만 선언한다 (trades_spec 참조).
 """
 
 from __future__ import annotations
 
 from typing import Any
 
-# 코드·지번은 식별자지 수량이 아니다. 원천이 JSON 정수로 내보내므로 선언하지 않으면
-# 타입 추론에 맡겨진다. jibun과 monthlyRent는 레코드마다 타입이 갈려서(#187) 선언이
-# 없으면 빌드가 실패한다.
-CODE_COLUMNS: dict[str, str] = {
-    column: "str"
-    for column in (
-        "sggCd",
-        "roadnmcd",
-        "roadnmsggcd",
-        "roadnmseq",
-        "roadnmbcd",
-        "roadnmbonbun",
-        "roadnmbubun",
-        "jibun",
-        "monthlyRent",
-    )
-}
-
-RENAME: dict[str, str] = {
-    "sggCd": "district_code",
-    "umdNm": "neighborhood",
-    "aptNm": "apt_name",
-    "aptSeq": "apt_seq",
-    "excluUseAr": "area_m2",
-    "deposit": "deposit_10k_krw",
-    "monthlyRent": "monthly_rent_10k_krw",
-    "dealYear": "deal_year",
-    "dealMonth": "deal_month",
-    "dealDay": "deal_day",
-    "buildYear": "build_year",
-    "jibun": "lot_number",
-    "contractType": "contract_type",
-    "contractTerm": "contract_term",
-    "preDeposit": "prior_deposit",
-    "preMonthlyRent": "prior_monthly_rent",
-}
-
-CASTS: dict[str, str] = {
-    "deposit_10k_krw": "int_comma",
-    "monthly_rent_10k_krw": "int_comma",
-    "area_m2": "float",
-    "floor": "int",
-    "build_year": "int",
-    "deal_year": "int",
-    "deal_month": "int",
-    "deal_day": "int",
-}
-
 DATASET_ID = "seoul-apartment-rent"
+ALIAS = "rent"
+
+SPEC: dict[str, Any] = {
+    "dataset_id": DATASET_ID,
+    "title": "Seoul Apartment Rent",
+    "source": {"kind": "file", "alias": ALIAS, "format": "jsonl"},
+    "contract": {
+        # 코드·지번은 식별자지 수량이 아니다. 원천이 JSON 정수로 내보내므로 선언하지
+        # 않으면 타입 추론에 맡겨진다. jibun과 monthlyRent는 레코드마다 타입이
+        # 갈려서(#187) 선언이 없으면 빌드가 실패한다.
+        "read_as": {
+            column: "str"
+            for column in (
+                "sggCd",
+                "roadnmcd",
+                "roadnmsggcd",
+                "roadnmseq",
+                "roadnmbcd",
+                "roadnmbonbun",
+                "roadnmbubun",
+                "jibun",
+                "monthlyRent",
+            )
+        },
+        "required": ("district_code", "apt_name", "deposit_10k_krw", "contract_date"),
+        "rename": {
+            "sggCd": "district_code",
+            "umdNm": "neighborhood",
+            "aptNm": "apt_name",
+            "aptSeq": "apt_seq",
+            "excluUseAr": "area_m2",
+            "deposit": "deposit_10k_krw",
+            "monthlyRent": "monthly_rent_10k_krw",
+            "dealYear": "deal_year",
+            "dealMonth": "deal_month",
+            "dealDay": "deal_day",
+            "buildYear": "build_year",
+            "jibun": "lot_number",
+            "contractType": "contract_type",
+            "contractTerm": "contract_term",
+            "preDeposit": "prior_deposit",
+            "preMonthlyRent": "prior_monthly_rent",
+        },
+        "casts": {
+            "deposit_10k_krw": "int_comma",
+            "monthly_rent_10k_krw": "int_comma",
+            "area_m2": "float",
+            "floor": "int",
+            "build_year": "int",
+            "deal_year": "int",
+            "deal_month": "int",
+            "deal_day": "int",
+        },
+        "derived": (
+            {
+                "name": "contract_date",
+                "kind": "date_parts",
+                "columns": ("deal_year", "deal_month", "deal_day"),
+            },
+        ),
+    },
+    "exports": ({"kind": "parquet", "output_path": "rent.parquet"},),
+}
 
 
 def build_spec(upload_id: str, *, description: str) -> Any:
@@ -77,30 +94,19 @@ def build_spec(upload_id: str, *, description: str) -> Any:
         SourceRef,
     )
 
+    contract = dict(SPEC["contract"])
+    contract["derived"] = tuple(DerivedColumn(**column) for column in contract["derived"])
+
     return BuildSpec(
-        dataset_id=DATASET_ID,
-        title="Seoul Apartment Rent",
+        dataset_id=SPEC["dataset_id"],
+        title=SPEC["title"],
         description=description,
         sources=(
             SourceRef(
-                kind="file",
                 upload_id=upload_id,
-                format="jsonl",
-                alias="rent",
-                schema=SchemaContract(
-                    read_as=CODE_COLUMNS,
-                    required=("district_code", "apt_name", "deposit_10k_krw", "contract_date"),
-                    rename=RENAME,
-                    casts=CASTS,
-                    derived=(
-                        DerivedColumn(
-                            name="contract_date",
-                            kind="date_parts",
-                            columns=("deal_year", "deal_month", "deal_day"),
-                        ),
-                    ),
-                ),
+                schema=SchemaContract(**contract),
+                **SPEC["source"],
             ),
         ),
-        exports=(ExportTarget(kind="parquet", output_path="rent.parquet"),),
+        exports=tuple(ExportTarget(**export) for export in SPEC["exports"]),
     )

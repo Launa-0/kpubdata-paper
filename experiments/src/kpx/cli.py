@@ -9,8 +9,8 @@ from collections.abc import Sequence
 from pathlib import Path
 
 from kpx import __version__
-from kpx.contract import CONDITIONS, LAYERS
-from kpx.datasets import DatasetNotBuilt, read_artifact, schema_report
+from kpx.contract import CONDITIONS, LAYERS, Layer
+from kpx.datasets import DatasetNotBuilt, LayerStore, read_artifact, schema_report
 from kpx.metrics.runtime import MEASURED_RUNS, WARMUP_RUNS, describe_environment
 from kpx.provenance import ProvenanceError, ProvenanceStore
 from kpx.results import default_store as default_result_store
@@ -35,6 +35,24 @@ def _builds(args: argparse.Namespace) -> ProvenanceStore:
 TASKS = {"task01": "kpx.tasks.task01_price_analysis"}
 
 
+def _layer_store(specifications: Sequence[str]) -> LayerStore:
+    """``dataset=layer=path`` 들을 러너가 읽을 resolver로 만든다.
+
+    러너는 자기 입력이 어디 있는지 모른 채로 있어야 하므로, 경로는 명령줄에서
+    들어와 여기서 한 번만 해석된다.
+    """
+    paths: dict[tuple[str, Layer], Path] = {}
+    for specification in specifications:
+        parts = specification.split("=", 2)
+        if len(parts) != 3:
+            raise RunError(f"--layer wants dataset=layer=path, got {specification!r}")
+        dataset, layer, path = parts
+        if layer not in LAYERS:
+            raise RunError(f"unknown layer: {layer!r} (known: {', '.join(LAYERS)})")
+        paths[(dataset, layer)] = Path(path)
+    return LayerStore(paths=paths)
+
+
 def _cmd_run(args: argparse.Namespace) -> int:
     """한 조건을 측정하며 실행하고 결과를 저장소에 남긴다 (#13).
 
@@ -54,17 +72,22 @@ def _cmd_run(args: argparse.Namespace) -> int:
         raise RunError(f"unknown task: {args.task!r} (known: {', '.join(sorted(TASKS))})")
     if args.condition not in CONDITIONS:
         raise RunError(f"unknown condition: {args.condition!r} (known: {', '.join(CONDITIONS)})")
-    if args.datasets_map is None:
+    if not args.layer:
         raise RunError(
             "kpx run needs the built layers. Pass --layer dataset=layer=path once per "
             "layer, or use scripts/run_task01.py which assembles them from a build."
         )
+    # 결과 행은 어느 스냅샷의 어느 파이프라인에서 나왔는지 말해야 한다. 기본값을
+    # 넣어 주면 그 자리에 추측이 기록되고, 표가 출처를 잃는다.
+    missing = [name for name in ("snapshot", "pipeline_version") if getattr(args, name) is None]
+    if missing:
+        raise RunError(f"kpx run needs {' and '.join('--' + name for name in missing)}")
 
     task = importlib.import_module(TASKS[args.task]).TASK
     row = run_condition(
         task,
         args.condition,
-        datasets=args.datasets_map,
+        datasets=_layer_store(args.layer),
         snapshot_id=args.snapshot,
         pipeline_version=args.pipeline_version,
         seed=args.seed,
@@ -215,7 +238,14 @@ def build_parser() -> argparse.ArgumentParser:
     run.add_argument("--warmup", type=int, default=WARMUP_RUNS)
     run.add_argument("--repeat", type=int, default=MEASURED_RUNS)
     run.add_argument("--results", type=Path, default=None)
-    run.set_defaults(func=_cmd_run, datasets_map=None)
+    run.add_argument(
+        "--layer",
+        action="append",
+        default=[],
+        metavar="DATASET=LAYER=PATH",
+        help="a built layer the condition may read; pass once per layer",
+    )
+    run.set_defaults(func=_cmd_run)
 
     schema = sub.add_parser("schema", help="print a built artifact's schema for the paper")
     schema.add_argument("artifact", type=Path, help="path to a .parquet or .jsonl artifact")

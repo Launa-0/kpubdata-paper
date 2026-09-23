@@ -12,6 +12,24 @@ from kpx.snapshot import SnapshotStore
 
 
 @pytest.fixture
+def gold_layer(tmp_path: Path) -> Path:
+    """Task 1의 Gold가 담는 모양 — 자치구 x 월 집계까지, 최종 답은 없이."""
+    path = tmp_path / "gold" / "trades_district_month.parquet"
+    path.parent.mkdir(parents=True)
+    months = [f"{year}-{month:02d}" for year in (2023, 2024) for month in range(1, 13)]
+    pd.DataFrame(
+        {
+            "district_code": ["11110"] * len(months) + ["11140"] * len(months),
+            "year_month": months * 2,
+            "n_deals": list(range(1, len(months) * 2 + 1)),
+            "mean_price_per_m2": [1.0e7 + n for n in range(len(months) * 2)],
+            "median_price_per_m2": [1.0e7 + n for n in range(len(months) * 2)],
+        }
+    ).to_parquet(path, index=False)
+    return path
+
+
+@pytest.fixture
 def snapshots(tmp_path: Path) -> Path:
     root = tmp_path / "snapshots"
     source = tmp_path / "pull"
@@ -297,3 +315,82 @@ class TestRunCommand:
         args = build_parser().parse_args(["run", "--task", "task01", "--condition", "gold"])
 
         assert (args.warmup, args.repeat) == (WARMUP_RUNS, MEASURED_RUNS)
+
+    def test_a_run_without_layers_says_so_instead_of_crashing(self) -> None:
+        assert main(["run", "--task", "task01", "--condition", "gold"]) == 2
+
+    def test_a_malformed_layer_is_an_error(self, tmp_path: Path) -> None:
+        assert (
+            main(
+                [
+                    "run",
+                    "--task",
+                    "task01",
+                    "--condition",
+                    "gold",
+                    "--layer",
+                    "seoul-apartment-trades=gold",
+                    "--snapshot",
+                    "seoul-apartment-trades/20260922-6660c8e25162",
+                    "--pipeline-version",
+                    "0.1.0+b545c2bd9a32",
+                ]
+            )
+            == 2
+        )
+
+    def test_a_run_that_does_not_say_where_its_input_came_from_is_refused(
+        self, gold_layer: Path
+    ) -> None:
+        # 출처 없는 행은 표에 실을 수 없다. 기본값을 넣어 주면 그 자리에 추측이 남는다.
+        assert (
+            main(
+                [
+                    "run",
+                    "--task",
+                    "task01",
+                    "--condition",
+                    "gold",
+                    "--layer",
+                    f"seoul-apartment-trades=gold={gold_layer}",
+                ]
+            )
+            == 2
+        )
+
+    def test_a_successful_run_is_appended_to_the_result_store(
+        self, gold_layer: Path, tmp_path: Path
+    ) -> None:
+        """#13이 요구한 경로의 끝은 화면이 아니라 experiment_results.parquet이다."""
+        results = tmp_path / "results" / "experiment_results.parquet"
+
+        assert (
+            main(
+                [
+                    "run",
+                    "--task",
+                    "task01",
+                    "--condition",
+                    "gold",
+                    "--layer",
+                    f"seoul-apartment-trades=gold={gold_layer}",
+                    "--snapshot",
+                    "seoul-apartment-trades/20260922-6660c8e25162",
+                    "--pipeline-version",
+                    "0.1.0+b545c2bd9a32",
+                    "--results",
+                    str(results),
+                    "--warmup",
+                    "0",
+                    "--repeat",
+                    "1",
+                ]
+            )
+            == 0
+        )
+
+        stored = pd.read_parquet(results)
+        assert list(stored["run_id"]) == ["task01/gold/seed0"]
+        assert list(stored["status"]) == ["ok"]
+        assert stored["source_snapshot"].iloc[0] == "seoul-apartment-trades/20260922-6660c8e25162"
+        assert stored["output_hash"].iloc[0]

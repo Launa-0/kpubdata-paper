@@ -9,6 +9,7 @@ Gold 계층은 여기서 만든다 — builder의 Gold 단계는 split/join/pack
 from __future__ import annotations
 
 import argparse
+import inspect
 import sys
 import time
 from pathlib import Path
@@ -30,6 +31,26 @@ from kpx.tasks.task01_price_analysis import transforms as tf  # noqa: E402
 
 DATASET = "seoul-apartment-trades"
 CONDITIONS = ("bronze", "silver", "gold", "monolithic")
+
+
+def gold_recipe() -> str:
+    """Gold를 만든 변환 — provenance가 identity에 섞어 넣는 것.
+
+    builder가 만드는 계층은 BuildSpec이 규칙을 선언하지만 이 Gold는 코드가 곧
+    규칙이다. 그래서 요약이 아니라 소스를 넘긴다 — 요약은 코드와 갈라지는 사본이고,
+    갈라지는 사본이 Gold build_id를 제자리에 묶어 두던 원인이다.
+
+    ``build_gold``만으로는 모자란다. 그것은 ``transforms``의 함수들을 호출할 뿐이라,
+    ``price_per_m2``의 본문이 바뀌면 Gold의 내용은 달라지는데 wrapper의 소스는
+    그대로다. 그래서 호출하는 함수를 골라 적지 않고 **모듈 전체**를 넘긴다 — 골라
+    적으면 새 호출이 생겼을 때 목록에 넣는 것을 잊어버릴 수 있고, 그것이 방금
+    ``derived``를 식별자에서 빠뜨렸던 실수와 같은 종류다.
+
+    Gold가 호출하지 않는 함수까지 들어가므로 build_id가 필요 이상으로 움직인다.
+    쓸데없이 움직이는 식별자는 번거로움이고, 움직여야 할 때 가만히 있는 식별자는
+    틀린 기록이다.
+    """
+    return f"{inspect.getsource(tf)}\n{inspect.getsource(build_gold)}"
 
 
 def build_gold(silver_path: Path, gold_path: Path) -> float:
@@ -86,7 +107,10 @@ def main(argv: list[str] | None = None) -> int:
     args = parser.parse_args(argv)
 
     silver = args.work_root / "runs" / args.run_id / "silver" / "trades" / "table.parquet"
-    gold_dir = args.work_root / "gold"
+    # Gold는 과제별 디렉터리에 둔다. provenance가 디렉터리를 통째로 digest하므로,
+    # 공용 폴더에 두면 T2~T4의 Gold가 생길 때 Task 1의 checksum이 남의 파일 때문에
+    # 움직인다 — 행 수와 컬럼은 그대로인 채로.
+    gold_dir = args.work_root / "gold" / "task01"
     gold = gold_dir / "trades_district_month.parquet"
 
     # 어떤 빌드를 읽는지 기록에서 확인한다. 기록이 없으면 이 측정이 어떤 입력에서
@@ -108,16 +132,20 @@ def main(argv: list[str] | None = None) -> int:
 
     # Gold는 Silver에서 파생된다. Silver를 다시 빌드했는데 Gold가 그대로면 옛
     # 스키마로 만든 집계 위에서 측정이 돌고, 그 숫자는 틀린 채로 맞아 보인다.
+    # --fresh는 Gold도 다시 만든다. 결과 행만 지우면 빌드 비용을 재지 않게 되어
+    # 손익분기가 빠지는데, 그것도 --fresh가 다시 내야 할 숫자다.
     gold_build_seconds: float | None = None
-    if not gold.exists() or gold.stat().st_mtime < silver.stat().st_mtime:
+    if args.fresh or not gold.exists() or gold.stat().st_mtime < silver.stat().st_mtime:
         gold_build_seconds = build_gold(silver, gold)
 
+    materialized = pd.read_parquet(gold)
     gold_build = record_derived_layer(
         gold_dir,
         layer="gold",
         upstream=silver_build,
-        row_count=len(pd.read_parquet(gold)),
-        columns=tuple(pd.read_parquet(gold).columns),
+        recipe=gold_recipe(),
+        row_count=len(materialized),
+        columns=tuple(materialized.columns),
         store=builds,
     )
     try:
@@ -263,7 +291,7 @@ def main(argv: list[str] | None = None) -> int:
         print("\n  Silver 빌드 비용은 두 조건에 공통이라 상쇄된다. 여기서 분할상환되는")
         print("  것은 Gold 빌드뿐이다.")
     else:
-        print("\n  (Gold가 이미 있어 빌드 비용을 재지 않았다 — 손익분기는 --fresh 실행에서)")
+        print("\n  (Gold가 이미 있어 빌드 비용을 재지 않았다. --fresh 로 다시 돌리면 나온다.)")
 
     return 0
 

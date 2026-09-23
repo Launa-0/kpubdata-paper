@@ -34,3 +34,15 @@ jobs:
       - run: uv run ruff format --check src tests scripts
       - run: uv run mypy src
       - run: uv run pytest
+      # mypy가 보지 않는 scripts/ 가 적어도 import는 되는지 본다. 빌드 스크립트의
+      # kpubdata-builder import는 main() 안에 있어서 --help 까지는 도달한다.
+      # PYTHONUTF8은 콘솔 인코딩 때문이다 — 도움말이 한글이라 cp949 터미널에서는
+      # 인코딩 오류로 죽는다.
+      - run: |
+          for script in scripts/*.py; do
+            case "$script" in scripts/_paths.py|*_spec.py) continue;; esac
+            uv run python "$script" --help > /dev/null
+          done
+        shell: bash
+        env:
+          PYTHONUTF8: "1"

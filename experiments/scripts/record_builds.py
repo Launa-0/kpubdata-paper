@@ -19,26 +19,13 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
-from _paths import DEFAULT_WORK_ROOT  # noqa: E402
+from _paths import DEFAULT_WORK_ROOT, SNAPSHOTS  # noqa: E402
 
-from kpx.pipeline import record_layer_chain  # noqa: E402
+from kpx.pipeline import record_layer_chain, transformation_recipe  # noqa: E402
 from kpx.provenance import ProvenanceStore  # noqa: E402
+from kpx.snapshot import SnapshotStore  # noqa: E402
 
 SPECS = {"trades": "trades_spec", "rent": "rent_spec"}
-
-
-def transformation_config(spec: str) -> dict[str, object]:
-    """pipeline_version에 들어갈 설정 — 변환 규칙 그 자체.
-
-    스펙 모듈이 선언한 rename/casts/read_as를 그대로 해시한다. 규칙이 바뀌면
-    pipeline_version이 움직여야 R1의 "같은 recipe"가 의미를 갖는다.
-    """
-    module = importlib.import_module(SPECS[spec])
-    return {
-        "rename": dict(module.RENAME),
-        "casts": dict(module.CASTS),
-        "read_as": dict(module.CODE_COLUMNS),
-    }
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -47,6 +34,7 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--spec", choices=sorted(SPECS), default="trades")
     parser.add_argument("--run-id", default=None, help="기본값: <spec>-silver-001")
     parser.add_argument("--work-root", type=Path, default=DEFAULT_WORK_ROOT)
+    parser.add_argument("--snapshots", type=Path, default=SNAPSHOTS)
     parser.add_argument(
         "--datasets",
         type=Path,
@@ -56,15 +44,17 @@ def main(argv: list[str] | None = None) -> int:
     args = parser.parse_args(argv)
 
     run_id = args.run_id or f"{args.spec}-silver-001"
-    dataset = importlib.import_module(SPECS[args.spec]).DATASET_ID
+    spec = importlib.import_module(SPECS[args.spec]).SPEC
     root = args.datasets or Path(__file__).resolve().parents[1] / "datasets"
+
+    # 스냅샷 기록을 넘긴다 — Bronze의 컬럼은 manifest가 아니라 얼린 원천이 답한다.
+    snapshot = SnapshotStore(args.snapshots).load(args.snapshot_id)
 
     recorded = record_layer_chain(
         args.work_root / "runs" / run_id,
-        dataset=dataset,
-        snapshot_id=args.snapshot_id,
-        config=transformation_config(args.spec),
-        alias=args.spec,
+        snapshot=snapshot,
+        config=transformation_recipe(spec),
+        alias=spec["source"]["alias"],
         store=ProvenanceStore(root),
     )
 
