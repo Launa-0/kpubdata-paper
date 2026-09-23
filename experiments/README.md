@@ -21,7 +21,7 @@ experiments/
 │   ├── provenance.py     # build recipe, result digest, lineage
 │   ├── results.py        # result schema and store
 │   ├── stats.py          # paired comparison, effect size, CI
-│   ├── metrics/          # quality / code_metrics / runtime / reproducibility
+│   ├── metrics/          # quality / code_metrics / runtime / reproducibility / storage
 │   └── tasks/            # task01_price_analysis … task04_bike
 ├── tests/
 ├── datasets/             # built dataset artifacts (bytes git-ignored, provenance committed)
@@ -509,6 +509,38 @@ values, and **six seeds instead of five** would lift the floor below 0.05 (#14).
 
 Requires the `analysis` extra (`scipy`).
 
+## The storage trade-off
+
+Layering is not free: the same facts are kept three times. Reporting only the
+side of the ledger the hypothesis is about would be advertising a trade-off
+rather than evaluating one. See
+[`docs/storage-tradeoff.md`](docs/storage-tradeoff.md) for the Discussion draft.
+
+```
+amplification factor = (Bronze + Silver + Gold) / final-only
+```
+
+The denominator is what a monolithic pipeline leaves on disk — it persists no
+intermediate, and the baseline is required to reach the same analysis input as
+the full Medallion path, so that footprint is the Gold artifact's.
+
+```python
+profile = measure_storage(store, "seoul-apartment-trades")
+profile.amplification_factor, profile.overhead_bytes
+storage_table([profile])
+```
+
+Sizes come from the build records rather than the filesystem, so a reader who
+never restores the artifacts still has them. The measurement refuses to sum
+layers from different pipeline versions or snapshots, to report a factor over an
+incomplete layer set, or to count a failed build's bytes — each would flatter
+the result. `bytes_per_row` is reported per layer because storage format is the
+one thing a provenance record cannot check.
+
+**Gold proliferation is surfaced rather than smoothed over.** A dataset can
+carry several task-oriented Gold artifacts; they all count toward Medallion
+storage, but only one is the baseline, so with more than one the caller must
+name it. Choosing silently would halve the reported cost.
 ## Task 3: what a join measures, and what it does not
 
 Task 3 is the paper's integration experiment. Task 1 measures the cost of
