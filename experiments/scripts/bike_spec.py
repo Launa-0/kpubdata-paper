@@ -14,6 +14,8 @@ docs/bike-source-generations.md에 고정돼 있다.
 `2020-01` / `202207`          year_month. G2 **내부에서** 표기가 바뀐다.
 `3` / `00003` / `102`         zfill. 대여소번호는 T4의 식별자라 폭이 맞아야 한다.
 `\N`                          null_tokens. 성별만이 아니라 운동량·탄소량에도 있다.
+                              성별은 결측 표기가 둘이라(빈 문자열 병행)
+                              column_null_tokens로 그 컬럼에만 더한다.
 `AGE_003` / `~10대`           **남긴다.** 두 체계의 대응을 말해 주는 근거가 배포
                               파일에 없다. 근거 없는 값 매핑은 정규화가 아니라 조작이고,
                               T4는 이 컬럼을 쓰지 않는다.
@@ -48,6 +50,16 @@ SPEC: dict[str, Any] = {
         # 결측을 빈 값이 아니라 문자열 \N으로 적는다. 캐스팅 전에 null로 모으지
         # 않으면 수치 컬럼에서 #188의 data-loss 가드가 빌드를 세운다.
         "null_tokens": ("\\N",),
+        # 성별의 결측은 표기가 둘이다 — 같은 파일 같은 달에 `\N`과 빈 문자열이
+        # 동시에 나오고, T4 기준으로 빈 문자열 쪽이 더 많다(1,040,784 vs 940,297).
+        # 전역 null_tokens에 ""를 넣으면 대여소명을 비롯한 다른 컬럼의 빈 문자열까지
+        # null이 된다. 성별 하나 때문에 계약 전체의 결측 정의를 바꿀 수 없다.
+        # on_absent는 **이 규칙**의 presence policy다. 성별이 없는 세대에서 결측
+        # 정규화를 건너뛸 뿐, 성별 컬럼을 optional로 만들지는 않는다 — rename이
+        # 여전히 성별을 요구하므로 ym_raw가 있고 성별만 없는 세대는 rename에서
+        # 멈춘다. 끊은 것은 "null 표기를 선언했다 = 그 컬럼이 반드시 있다"는
+        # 불필요한 결합 하나다.
+        "column_null_tokens": {"성별": {"tokens": ("",), "on_absent": "ignore"}},
         # 세대마다 다른 이름이 붙은 같은 양. 후보 순서가 우선순위이므로 recipe의
         # 일부다 — 세대가 섞인 스냅샷에서 값이 어긋나면 fail-closed 한다.
         "coalesce": {
@@ -88,10 +100,16 @@ def build_spec(upload_id: str, *, description: str) -> Any:
     """얼린 스냅샷 하나를 Silver까지 끌고 가는 BuildSpec (trades_spec 참조)."""
     from kpubdata_builder.spec.models import (
         BuildSpec,
+        ColumnNullTokens,
         ExportTarget,
         SchemaContract,
         SourceRef,
     )
+
+    contract = dict(SPEC["contract"])
+    contract["column_null_tokens"] = {
+        column: ColumnNullTokens(**rule) for column, rule in contract["column_null_tokens"].items()
+    }
 
     return BuildSpec(
         dataset_id=SPEC["dataset_id"],
@@ -100,7 +118,7 @@ def build_spec(upload_id: str, *, description: str) -> Any:
         sources=(
             SourceRef(
                 upload_id=upload_id,
-                schema=SchemaContract(**SPEC["contract"]),
+                schema=SchemaContract(**contract),
                 **SPEC["source"],
             ),
         ),

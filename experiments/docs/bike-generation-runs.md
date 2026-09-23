@@ -4,7 +4,10 @@
 흡수하고 무엇에서 멈추는지가 R2의 관측값이다. 세대 정의는
 [bike-source-generations.md](bike-source-generations.md).
 
-빌더는 `0.4.0.dev0+66473fc598a3` (kpubdata-builder#621, coalesce/zfill/year_month).
+아래 표는 **최종 계약**으로 여섯 번을 다시 돌린 결과다. 여섯 런 모두 같은 clean
+빌더 `0.4.0.dev0+5d86eedf3a1a` (kpubdata-builder#621 coalesce/zfill/year_month +
+#624 column_null_tokens/on_absent)에서 나왔고, `config_hash`는 `f9f6813c9110`으로
+동일하다 — 계약을 세대마다 바꾸지 않았다는 것이 실측으로 고정된다.
 
 | | rows_in | status | failed_stage | exception | offending_field | rows_out |
 |---|---:|---|---|---|---|---:|
@@ -188,3 +191,178 @@ schema_conformance)는 required 컬럼에 대해서만 정의되므로 표 2의 
 
 바꾸려면 `null_tokens`를 컬럼별로 선언할 수 있어야 하고, 그것은 이 실험의 범위를
 넘는 빌더 확장이다.
+
+---
+
+# 재측정 — 컬럼별 결측 선언을 더한 뒤 (kpubdata-builder#624)
+
+위 실행에서 **성별의 결측 표기가 둘**(`\N`과 빈 문자열)이라는 것이 드러났다. 전역
+`null_tokens`로는 그것을 다른 컬럼의 의미를 바꾸지 않고 표현할 수 없어, 빌더에
+`column_null_tokens`를 더하고 계약을 고친 뒤 전 세대를 다시 돌렸다.
+
+```python
+"null_tokens": ("\N",),
+"column_null_tokens": {"성별": ("",)},
+```
+
+빌더는 `0.4.0.dev0+8c2650c88941`.
+
+**결과를 보고 지표를 유리하게 고친 것이 아니다.** 전수 조사에서 같은 의미의 결측이
+컬럼별로 다른 표기를 쓴다는 것을 발견했고, 전역 null-token 규칙으로는 그것을 다른
+컬럼의 의미를 바꾸지 않고 표현할 수 없었다. 계약 **표현력의 결함**을 고친 뒤 품질
+측정을 다시 실행한 것이다. 특히 **빈 문자열을 전역 토큰으로 추가하지 않았다.**
+
+## `gender`의 per-column missingness
+
+| | rows | null | 비율 |
+|---|---:|---:|---:|
+| G1 | 327,231 | 169,108 | 51.7% |
+| I1 | 128,413 | 55,314 | 43.1% |
+| G3 | 1,246,386 | 409,045 | 32.8% |
+
+남은 표기는 `F`/`M`/`f`/`m`뿐이다. 사전에 원본 CSV를 직접 세어 계산한 값과 정확히
+일치한다.
+
+**이것은 RQ1의 primary `missing_rate`가 아니다.** 그 지표는 `required` 컬럼에 대해서만
+정의되고 `gender`는 `required`가 아니다. 논문에는 이렇게 쓴다.
+
+> `gender`의 canonical per-column missingness가 19.2%에서 40.4%로 증가했으나,
+> `gender`는 required field가 아니므로 primary required-field missing-rate에는
+> 영향을 주지 않았다.
+
+`schema_conformance`/`parsing_failure_rate`도 같은 이유로 영향이 없고,
+`type_consistency`는 이미 문자열 계열이라 무관하다.
+
+## 잠재 중복이 드러났다
+
+`""`와 `\N`이 같은 null로 모이면서, 그 차이만 있던 행이 중복으로 합쳐진다.
+
+측정은 **T4와 같은 함수, 같은 canonical 11컬럼 기준**으로 다섯 산출물에 한 번에
+돌렸다. 처음에는 세대별을 raw 원본 컬럼으로, T4를 canonical로 세고 비교했는데
+그것은 정의가 다른 두 숫자를 맞춰 보는 일이었다. 기준을 맞추자 기대값이 바뀌었다.
+
+| | 세대 | canonical duplicate |
+|---|---:|---:|
+| G1 | 5개월 | **3** |
+| G2 | 30개월 | **19** |
+| I1 | 1개월 | 0 |
+| G3 | 12개월 | 0 |
+| 합 | 48개월 | **22** |
+| T4 | 48개월 | **22** |
+
+`sum(generation) == T4`가 rows·gender null·duplicate 세 축에서 모두 성립한다.
+월 집합이 쌍마다 서로소이므로(합집합 48개월, 겹침 0), integration 단계에서
+중복이 새로 유입되지 않았다는 뜻이다.
+
+중복 그룹은 전부 한 달 안에서 닫히고, `station_code`는 전부 5자리이며,
+`gender`는 22개 그룹 전부 null이다.
+
+```
+G1  2020-04(1)  2020-05(2)
+G2  2020-06(1) 07(1) 08(2) 09(4) 11(6) 12(3)  2021-12(1)  2022-03(1)
+```
+
+서로 다른 파일이나 세대가 섞여 만든 중복이 아니고, zfill이 다른 코드를 같은
+값으로 수렴시킨 것도 아니다. 표본을 확인했고 원인이 정확히 표기 차이다.
+
+```
+성별='\N'  대여소=3539. 서원마을  건수=1  이동거리=0  이용시간=17
+성별=''    대여소=3539. 서원마을  건수=1  이동거리=0  이용시간=17
+```
+
+나머지 필드가 전부 같다. 버그가 아니다 — canonicalization이 표현 차이를 제거하면서
+원천에 이미 있던 중복을 드러낸 것이고, 전월세의 `monthlyRent` `'0'` vs `0`과 같다.
+
+## 근거 하나는 약했다
+
+전역 선언을 피한 이유로 "대여소명 같은 다른 컬럼까지 null이 된다"를 들었는데,
+T4 범위를 전수 조사하니 **빈 문자열이 있는 컬럼은 `성별` 하나뿐이었다.**
+
+```
+빈 문자열이 있는 컬럼:  성별 1,040,784  (그 외 없음)
+```
+
+이 데이터에 한해서는 전역 선언도 같은 결과를 냈을 것이다. 그럼에도 컬럼별 선언을
+유지하는 이유는 둘이다. 계약은 원천에 대해 **참인 것**을 말해야 하고("이 소스에서는
+빈 문자열이 결측"과 "성별에서 빈 문자열이 결측"은 다른 주장이다), 이 계약은 하나로
+여러 세대를 마주하도록 만들어져서 뒤 세대에 다른 컬럼의 빈 문자열이 생기면 전역
+선언이 그것까지 조용히 삼킨다.
+
+막은 것은 관측된 오염이 아니라 **계약이 말할 수 있는 것의 범위**다.
+
+## G4의 실패 지점이 앞당겨졌다
+
+```
+이전  TabularError: coalesce target 'ym_raw' found none of its candidates
+현재  TabularError: declared column_null_tokens refers to columns absent
+                    from the source: ['성별']
+```
+
+`column_null_tokens`가 `coalesce`보다 앞이라 더 이른 단계에서 멈춘다. 여전히
+fail-closed이고, 내용상으로는 오히려 나은 신호다 — `성별`의 부재가 `ym_raw`보다
+본질적인 단절(인구통계 차원 소멸)이다.
+
+다만 이것은 `column_null_tokens`의 fail-on-absent 규칙이 **세대 간 계약을 더 취약하게
+만든다**는 뜻이기도 하다. 여기서는 어차피 실패해야 할 G4라 무해했지만, 선언한 컬럼이
+일부 세대에만 있는 경우에는 통과해야 할 세대를 세울 수 있다.
+
+### 정정 — `on_absent: ignore`가 컬럼을 optional로 만들지는 않는다
+
+위에서 G4의 실패 지점이 앞당겨진 문제를 `column_null_tokens`에 `on_absent: error|ignore`를
+더해 풀었다(kpubdata-builder#624). 성별에 `ignore`를 선언했고, G4는 다시 `ym_raw`
+coalesce에서 멈춘다.
+
+다만 이것을 "성별이 optional이라 통과했다"로 적으면 부정확하다. 정확히는:
+
+> `column_null_tokens`의 성별 규칙이 `on_absent: ignore`로 인해 적용을 건너뛰었고,
+> 이후 필수 시점 축을 구성하는 `ym_raw` 후보가 없어 coalesce 단계에서 fail-closed 했다.
+
+`on_absent`는 **그 규칙 하나의** presence policy다. `rename`에 `성별 → gender`가 남아
+있으므로, `ym_raw`는 있는데 성별만 없는 세대가 들어오면 rename에서 멈춘다. 실제로
+확인했다.
+
+```
+declared rename refers to columns absent from the source: ['성별']
+```
+
+`on_absent`가 끊은 것은 "null 표기를 선언했다 = 그 컬럼이 반드시 있다"는 불필요한
+결합 하나뿐이다. `rename`이 선언된 source column의 존재를 요구하는 것은 rename 자체의
+계약 의미이고, 그것까지 optional로 만드는 것은 별개의 설계 문제다. 지금 건드리지 않는다.
+
+G4가 `ym_raw`에서 멈추는 것이 R2에 맞는 결과다 — 인구통계 컬럼의 null 정규화 설정
+때문이 아니라, T4/R2에 필요한 **시점 축을 더 이상 구성할 수 없는 세대**에서 멈춘 것이다.
+
+## T4 통합본 검증
+
+T4는 세대별 산출물을 이어 붙인 것이 아니라 통합 스냅샷 하나를 같은 계약으로 처음부터
+빌드한 것이다. 그러므로 세대별 결과와 일치해야 할 이유가 구조적으로 보장되지 않고,
+일치 여부 자체가 검증값이 된다.
+
+| | rows | gender null | canonical duplicate | months |
+|---|---:|---:|---:|---:|
+| G1 | 327,231 | 169,108 | 3 | 5 |
+| G2 | 3,200,206 | 1,347,614 | 19 | 30 |
+| I1 | 128,413 | 55,314 | 0 | 1 |
+| G3 | 1,246,386 | 409,045 | 0 | 12 |
+| **합** | **4,902,236** | **1,981,081** | **22** | **48** |
+| **T4** | **4,902,236** | **1,981,081** | **22** | **48** |
+
+세 축이 모두 맞는다. 전제가 되는 월 집합의 서로소성도 확인했다.
+
+```
+G1 2020-01..2020-05   G2 2020-06..2022-12 (2021-09 없음)
+I1 2021-09            G3 2023-01..2023-12
+모든 쌍 겹침 0,  합집합 48개월
+```
+
+G2 스냅샷의 `period`는 `2020-06 ~ 2022-12`지만 실제 데이터는 30개월이고 2021-09이
+빠져 있다. `period`는 범위 표기일 뿐 연속을 뜻하지 않으므로, 그 달을 I1 스냅샷이
+갖는다는 사실을 G2 metadata의 `notes`에 적어 두었다.
+
+빌드 provenance도 여섯 런이 동일하다.
+
+```
+git_commit  5d86eedf3a1ab80f1ac237d7d406e08fe51e745c   git_dirty  false
+config_hash f9f6813c9110
+status      G1 ok  G2 ok  I1 ok  G3 ok  T4 ok  /  G4 failed (coalesce / ym_raw)
+```

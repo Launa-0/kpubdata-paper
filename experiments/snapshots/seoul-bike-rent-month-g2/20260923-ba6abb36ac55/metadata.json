@@ -18,7 +18,7 @@
   "dataset": "seoul-bike-rent-month-g2",
   "file_count": 2,
   "metadata_schema_version": 1,
-  "notes": "G2 (2020-06~2022-12, 2021-09 제외). 내부에 2022-01과 202207 표기가 섞여 있다 — 쪼개지 않는다. source/ingest_manifest.json 참조.",
+  "notes": "G2. period는 범위 표기일 뿐 연속이 아니다 — 2021-09이 빠져 있고 그 달은 seoul-bike-rent-month-i1 스냅샷이 갖는다. 실제 데이터는 30개월. 내부에 2022-01과 202207 표기가 섞여 있다 — 쪼개지 않는다. source/ingest_manifest.json 참조.",
   "period": [
     "2020-06",
     "2022-12"
