@@ -155,13 +155,6 @@ def sample(frame: pd.DataFrame, rows: int | None) -> pd.DataFrame:
     return frame.iloc[:: max(1, len(frame) // rows)]
 
 
-def snapshot_for(dataset: str, snapshots: Path) -> Path:
-    matches = sorted(snapshots.glob(f"{dataset}/*/source/raw_records.jsonl"))
-    if len(matches) != 1:
-        raise SystemExit(f"{dataset}: 원천이 {len(matches)}개다. 하나여야 한다.")
-    return matches[0]
-
-
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--snapshots", type=Path, default=SNAPSHOTS)
@@ -188,13 +181,14 @@ def main(argv: list[str] | None = None) -> int:
         required = set(contract.get("required", ()))
         pairs, kinds, derived = column_plan(contract)
 
-        silver_path = args.work_root / "runs" / f"{alias}-silver-001" / "silver" / alias
-        silver_path /= "table.parquet"
+        silver_path = args.work_root / "runs" / spec["run_id"] / "silver" / alias / "table.parquet"
         if not silver_path.exists():
             print(f"[skip] {dataset}: Silver가 없다 ({silver_path})")
             continue
 
-        source = snapshot_for(dataset, args.snapshots)
+        source = args.snapshots / spec["snapshot_id"] / "source" / "raw_records.jsonl"
+        if not source.exists():
+            raise SystemExit(f"{dataset}: 선언된 스냅샷이 없다 ({source})")
         raw = pd.read_json(source, lines=True, dtype=False, convert_dates=False)
         bronze = sample(raw, args.rows)
         # 두 계층을 같은 비율로 줄인다. 한쪽만 줄이면 duplicate_rate가 표본 크기

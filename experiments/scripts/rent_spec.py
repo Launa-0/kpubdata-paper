@@ -21,6 +21,11 @@ SPEC: dict[str, Any] = {
     "dataset_id": DATASET_ID,
     "title": "Seoul Apartment Rent",
     "source": {"kind": "file", "alias": ALIAS, "format": "jsonl"},
+    # 논문의 숫자를 만드는 빌드. 이름 규칙으로 추측하지 않는다 — 같은 dataset_id
+    # 아래 폐기한 스냅샷이 남아 있을 수 있고, 어느 것을 쟀는지는 추측이 아니라
+    # 선언이어야 한다. recipe에는 들어가지 않는다(RUN_SCOPED_KEYS).
+    "snapshot_id": "seoul-apartment-rent/20260923-a0ed9577c41a",
+    "run_id": "rent-silver-001",
     "contract": {
         # 코드·지번은 식별자지 수량이 아니다. 원천이 JSON 정수로 내보내므로 선언하지
         # 않으면 타입 추론에 맡겨진다. jibun과 monthlyRent는 레코드마다 타입이
