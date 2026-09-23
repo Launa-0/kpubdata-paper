@@ -509,6 +509,20 @@ values, and **six seeds instead of five** would lift the floor below 0.05 (#14).
 
 Requires the `analysis` extra (`scipy`).
 
+## What this harness does not measure
+
+Every RQ2 number here is a property of a program: lines, transformation
+functions, logical steps, complexity, runtime, peak memory. **None of them is a
+measure of human time.** The planned user study is excluded from the main
+experiment — see [`docs/user-study-exclusion.md`](docs/user-study-exclusion.md)
+for the reasons and the Construct Validity paragraph they feed.
+
+The consequence is a limit on the claim rather than a caveat to be argued away.
+The paper can support *layering reduces the volume and complexity of preparation
+code*, with data quality and correctness reported separately. It cannot support
+*layering reduces analyst effort* — and the two are plausibly least proportional
+exactly where it matters, since a Bronze `"120,000"` silently parsed as `120`
+costs a machine nothing and an analyst a great deal.
 ## The storage trade-off
 
 Layering is not free: the same facts are kept three times. Reporting only the
