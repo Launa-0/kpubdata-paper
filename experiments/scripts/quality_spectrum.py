@@ -88,6 +88,7 @@ from typing import Any
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
+import _builder_identity  # noqa: E402
 import pandas as pd  # noqa: E402
 from _paths import DEFAULT_WORK_ROOT, SNAPSHOTS  # noqa: E402
 
@@ -219,7 +220,10 @@ def main(argv: list[str] | None = None) -> int:
         # 있으면 선언은 옳고 바이트는 틀리다. 스냅샷·recipe·체크섬 세 축으로
         # provenance에 묶는다.
         build = bind_measured_artifact(
-            silver_path.parent, spec=spec, store=ProvenanceStore(args.datasets)
+            silver_path.parent,
+            spec=spec,
+            store=ProvenanceStore(args.datasets),
+            builder_version=_builder_identity.version_of(args.work_root / "runs" / spec["run_id"]),
         )
 
         source = args.snapshots / spec["snapshot_id"] / "source" / "raw_records.jsonl"

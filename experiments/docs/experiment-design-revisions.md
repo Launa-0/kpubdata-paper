@@ -56,6 +56,7 @@ effort`가 아니다 — #54). RQ3는 correctness 우열이 아니라 analytical
 | RQ1 headline | aggregate `representation_change_rate` | 계약의 `read_as` 컬럼을 role에 넣느냐에 따라 trades 0.238 ↔ 0.450, rent 0.225 ↔ 0.413 — 원천의 성질이 아니라 role 정의의 함수 | role별 전이 범주·원인 표를 primary로, aggregate는 진단. coverage/preservation은 integrity check | 수치 불변, 표시 변경 |
 | RQ1 측정 파서 | builder와 같다고 가정 | builder 실제 함수와 대조하니 null token·zfill 앞 공백 제거, 전각 숫자, `factorize`의 `1`/`1.0`/`True` 병합이 달랐다 | builder 동작에 맞춤 | 서울 3종 해당 값 0 — **결과 불변** |
 | RQ2 runtime (번복) | 기술통계만, 재실행 불필요 | JSONL vs Parquet, pandas vs polars, builder 부기 비용이 섞여 S1 이득과 S3/S4 손해가 **양방향으로 과장** | 같은 엔진·포맷 통제, raw 반복 저장, interleave로 **재측정** | 기존 timing 수치 폐기 예정 |
+| Provenance (확장) | snapshot / config / checksum binding. T1 러너는 "마지막으로 기록된 Silver"를 읽음 | 수정 전후 builder(`5d86eed`, `096d023`)의 Silver가 byte 단위로 같아 checksum으로 builder를 구분할 수 없다. "마지막 기록"은 다른 스냅샷·빌더의 빌드가 나중에 기록되면 틀린 빌드를 집는다 | 실행 디렉터리의 `builder_identity.json`까지 binding (`bind_measured_artifact(builder_version=…)`), T1도 같은 binding 사용 | 결과 불변 (기존 세 빌드를 그대로 다시 찾음) |
 | Task scope (번복) | 축소 T4 유지 | T1이 이미 키 기반 lag·순위를 하고, T4의 준비 단계는 R2·RQ1이 이미 잰 것 — 새 construct가 없다 | T4 제외, 따릉이는 RQ1·원천 진화·계약 경계에 유지 | scope 변경 |
 ## RQ1 — 측정이 만든 효과였다
 
