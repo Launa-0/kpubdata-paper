@@ -155,3 +155,92 @@ def test_zfill_pads_the_value_as_stored_like_the_builder_does() -> None:
     """builder는 zfill 전에 공백을 지우지 않는다 — ``" 3"``은 ``"000 3"``이 된다."""
     assert _pair(STATION, [" 3"], ["000 3"]).semantic_preserved_count == 1
     assert _pair(STATION, [" 3"], ["00003"]).semantic_preserved_count == 0
+
+
+# -- 전이 원인 (overnight/rq1-transition/PRE_ANALYSIS.md 11절, 결과 보기 전 고정) --------
+
+
+def _causes(role, bronze_values, silver_values):
+    from kpx.metrics.pairing import pair_and_classify
+
+    bronze = pd.DataFrame({role.name: pd.Series(bronze_values, dtype=object)})
+    silver = pd.DataFrame({role.name: pd.Series(silver_values, dtype=object)})
+    pairs, transitions = pair_and_classify(bronze, silver, (role,))
+    return pairs[0], {row["category"]: row["cells"] for row in transitions}
+
+
+GENDER = Role(
+    name="gender",
+    kind="text",
+    required=False,
+    cast="",
+    projection="direct",
+    bronze=("성별",),
+    silver=("gender",),
+    null_tokens=("\\N", ""),
+)
+YM = Role(
+    name="ym_raw",
+    kind="text",
+    required=True,
+    cast="year_month",
+    projection="coalesce",
+    bronze=("대여일자", "대여년월"),
+    silver=("ym_raw",),
+)
+DISTRICT = Role(
+    name="district_code",
+    kind="text",
+    required=True,
+    cast="",
+    projection="direct",
+    bronze=("sggCd",),
+    silver=("district_code",),
+)
+DEAL_DATE = Role(
+    name="deal_date",
+    kind="date",
+    required=True,
+    cast="",
+    projection="parts",
+    bronze=("dealYear", "dealMonth", "dealDay"),
+    silver=("deal_date",),
+)
+
+
+def test_each_cause_is_named_by_the_pre_registered_rule() -> None:
+    import datetime as dt
+
+    assert _causes(PRICE, ["120,000"], [120000])[1] == {"numeric_formatting": 1}
+    assert _causes(PRICE, ["120000"], [120000])[1] == {"primitive_type_normalization": 1}
+    assert _causes(PRICE, [120000], [120000])[1] == {"unchanged": 1}
+    assert _causes(STATION, ["3"], ["00003"])[1] == {"identifier_padding": 1}
+    assert _causes(GENDER, ["\\N", "", "F"], [None, None, "F"])[1] == {
+        "null_canonicalization": 2,
+        "unchanged": 1,
+    }
+    assert _causes(YM, ["202207"], ["2022-07"])[1] == {"date_year_month_normalization": 1}
+    assert _causes(DISTRICT, [11110], ["11110"])[1] == {"primitive_type_normalization": 1}
+    assert _causes(DEAL_DATE, ["2023-01-05"], [dt.date(2023, 1, 5)])[1] == {"derived_field": 1}
+
+
+def test_a_meaning_change_and_an_unreadable_value_are_not_hidden_as_causes() -> None:
+    assert _causes(PRICE, ["120,000"], [12])[1] == {"other:semantic_difference": 1}
+    assert _causes(PRICE, ["n/a"], [None])[1] == {"unreadable_lossy": 1}
+
+
+def test_causes_partition_the_cells_and_agree_with_the_change_count() -> None:
+    pair, causes = _causes(STATION, ["3", "00003", "\\N", "102"], ["00003", "00003", None, "00102"])
+    assert sum(causes.values()) == pair.rows
+    assert pair.rows - causes.get("unchanged", 0) == pair.representation_changed_count
+
+
+def test_structure_is_a_role_attribute_not_a_cell_cause() -> None:
+    """coalesce·rename은 셀 값을 바꾸지 않는다 — 셀 범주의 분모에 섞지 않는다."""
+    from kpx.metrics.pairing import pair_and_classify
+
+    bronze = pd.DataFrame({"ym_raw": ["2022-07"]})
+    silver = pd.DataFrame({"ym_raw": ["2022-07"]})
+    _, transitions = pair_and_classify(bronze, silver, (YM,))
+    assert {row["structural"] for row in transitions} == {"coalesce"}
+    assert {row["category"] for row in transitions} == {"unchanged"}

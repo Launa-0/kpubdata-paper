@@ -65,7 +65,14 @@ import pandas as pd
 
 from kpx.metrics.roles import Role, interpreter_for
 
-__all__ = ["RolePair", "aggregate", "assert_row_identity", "pair_roles", "token"]
+__all__ = [
+    "RolePair",
+    "aggregate",
+    "assert_row_identity",
+    "pair_and_classify",
+    "pair_roles",
+    "token",
+]
 
 #: A value that carries no meaning to compare.
 _UNREADABLE = object()
@@ -129,6 +136,10 @@ def token(value: Any) -> tuple[str, Any]:
     return ("str", str(value))
 
 
+#: Casts that turn text into a number — rule 8 of the transition causes.
+_NUMERIC_CASTS = frozenset({"int", "int64", "float", "float64", "int_comma", "float_comma"})
+
+
 def pair_roles(
     bronze: pd.DataFrame, silver: pd.DataFrame, roles: tuple[Role, ...]
 ) -> list[RolePair]:
@@ -137,12 +148,48 @@ def pair_roles(
     Both frames must already be projections of the same roles over the same
     rows; :func:`kpx.metrics.roles.assert_symmetric` is what guarantees it.
     """
+    return pair_and_classify(bronze, silver, roles)[0]
+
+
+def pair_and_classify(
+    bronze: pd.DataFrame, silver: pd.DataFrame, roles: tuple[Role, ...]
+) -> tuple[list[RolePair], list[dict[str, Any]]]:
+    """:func:`pair_roles`, plus **why** each cell changed.
+
+    A change count says how much standardization rewrote; it does not say what
+    kind of rewrite it was — ``"0"`` becoming ``0``, ``"3"`` becoming
+    ``"00003"`` and ``\\N`` becoming null are all "direct" roles and all one
+    number. The causes are named by the rules fixed before any result was seen
+    (``overnight/rq1-transition/PRE_ANALYSIS.md`` section 11), first match wins:
+
+    1. same token — ``unchanged``
+    2. either side unreadable — ``unreadable_lossy``
+    3. different meaning — ``other:semantic_difference``
+    4. assembled from parts — ``derived_field``
+    5. a declared null token became null — ``null_canonicalization``
+    6. ``year_month`` cast, or an uncast date — ``date_year_month_normalization``
+    7. zero-padded to the declared width — ``identifier_padding``
+    8. numeric cast: from text with a separator — ``numeric_formatting``,
+       otherwise ``primitive_type_normalization``
+    9. no cast, a source number now stored as text (``read_as``) —
+       ``primitive_type_normalization``
+    10. anything else — ``other``
+
+    Rules 5 and 7 strip the Bronze value as the pre-registration wrote them;
+    no value in the measured snapshots is affected by the strip.
+
+    Renaming and coalescing never change a value, so they are not causes: each
+    row carries the role's ``structural`` transition beside the cell counts
+    instead of inside them. The causes partition every role's cells, and all
+    but ``unchanged`` add up to its ``representation_changed_count``.
+    """
     if len(bronze) != len(silver):
         raise ValueError(
             f"the two layers hold {len(bronze)} and {len(silver)} rows; a row-wise "
             "pairing needs the same rows on both sides"
         )
     pairs: list[RolePair] = []
+    transitions: list[dict[str, Any]] = []
     for role in roles:
         left, right = bronze[role.name], silver[role.name]
         changed = _tokens(left) != _tokens(right)
@@ -150,7 +197,8 @@ def pair_roles(
         canonical = _canonicaliser(role)
         read_left, read_right = _canonical(left, canonical), _canonical(right, canonical)
         comparable = (read_left != _UNREADABLE) & (read_right != _UNREADABLE)
-        preserved = comparable & (read_left == read_right)
+        same_meaning = read_left == read_right
+        preserved = comparable & same_meaning
 
         pairs.append(
             RolePair(
@@ -164,7 +212,21 @@ def pair_roles(
                 semantic_preserved_count=int(preserved.sum()),
             )
         )
-    return pairs
+        causes = _causes(role, left, right, changed, comparable, same_meaning)
+        names, counts = np.unique(causes, return_counts=True)
+        transitions.extend(
+            {
+                "role": role.name,
+                "required": role.required,
+                "cast": role.cast,
+                "projection": role.projection,
+                "structural": _structural(role),
+                "category": str(name),
+                "cells": int(count),
+            }
+            for name, count in zip(names, counts, strict=True)
+        )
+    return pairs, transitions
 
 
 def assert_row_identity(
@@ -269,6 +331,69 @@ def _canonicaliser(role: Role) -> Any:
         return text
 
     return read
+
+
+def _causes(
+    role: Role,
+    left: pd.Series[Any],
+    right: pd.Series[Any],
+    changed: np.ndarray[Any, Any],
+    comparable: np.ndarray[Any, Any],
+    same_meaning: np.ndarray[Any, Any],
+) -> np.ndarray[Any, Any]:
+    """One cause per cell, by the pre-registered rules (see :func:`pair_and_classify`)."""
+    kind_left = _over_uniques(left, lambda value: token(value)[0]).astype(str)
+    kind_right = _over_uniques(right, lambda value: token(value)[0]).astype(str)
+    text_left = kind_left == "str"
+    nulls = frozenset(role.null_tokens)
+    declared_null = _over_uniques(
+        left, lambda value: isinstance(value, str) and value.strip() in nulls
+    ).astype(bool)
+    has_separator = _over_uniques(
+        left, lambda value: isinstance(value, str) and "," in value
+    ).astype(bool)
+
+    size = len(left)
+    padded = np.zeros(size, dtype=bool)
+    if role.zfill:
+        width = role.zfill
+        expected = _over_uniques(
+            left, lambda value: value.strip().zfill(width) if isinstance(value, str) else None
+        )
+        padded = text_left & (kind_right == "str") & (expected == right.to_numpy(dtype=object))
+
+    def every(flag: bool) -> np.ndarray[Any, Any]:
+        return np.full(size, flag)
+
+    numeric = role.cast in _NUMERIC_CASTS
+    rules = [
+        (~changed, "unchanged"),
+        (~comparable, "unreadable_lossy"),
+        (~same_meaning, "other:semantic_difference"),
+        (every(role.projection == "parts"), "derived_field"),
+        ((kind_right == "null") & text_left & declared_null, "null_canonicalization"),
+        (
+            every(role.cast == "year_month" or (role.kind == "date" and not role.cast)),
+            "date_year_month_normalization",
+        ),
+        (padded, "identifier_padding"),
+        (every(numeric) & text_left & has_separator, "numeric_formatting"),
+        (every(numeric), "primitive_type_normalization"),
+        (
+            every(not role.cast) & np.isin(kind_left, ["int", "float"]) & (kind_right == "str"),
+            "primitive_type_normalization",
+        ),
+    ]
+    return np.select([rule for rule, _ in rules], [name for _, name in rules], default="other")
+
+
+def _structural(role: Role) -> str:
+    """How the role's column itself changed — never a cell count."""
+    if role.projection == "parts":
+        return "derived"
+    if role.projection == "coalesce":
+        return "coalesce"
+    return "rename" if role.bronze[0] != role.name else "same_name"
 
 
 def _tokens(series: pd.Series[Any]) -> np.ndarray[Any, Any]:

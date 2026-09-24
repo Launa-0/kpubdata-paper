@@ -1,5 +1,13 @@
 # Statistical analysis
 
+> **Runtime protocol is being redesigned — the runtime parts below are not the
+> final protocol.** `runtime.py` stores only the median and every run uses seed 0,
+> so the seed-paired test described here cannot apply to runtime, and the
+> `task02` example refers to a task that was dropped. Final timing will be
+> descriptive, same-engine and same-format, with raw repeats stored; see
+> `experiment-design-revisions.md`. The decision rule for the other metrics is
+> unchanged.
+
 Every hypothesis in the paper compares conditions of the **same** task on the
 **same** snapshot, so the comparisons are paired. This document fixes how they
 are tested, before any result exists — for the same reason the preprocessing

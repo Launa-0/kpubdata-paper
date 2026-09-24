@@ -120,3 +120,26 @@ def test_only_ascii_digits_read_as_numbers_like_the_builder() -> None:
     for cast in ("int", "float", "int_comma", "float_comma"):
         assert INTERPRETERS[cast]("１２") is None
         assert INTERPRETERS[cast]("12") == 12
+
+
+def test_coalesce_sources_count_which_column_supplied_each_row() -> None:
+    """세대가 바뀌며 이름이 바뀐 컬럼은 셀 값 변화가 아니다 — 행 단위로 따로 센다."""
+    from kpx.metrics.roles import Role, coalesce_sources
+
+    role = Role(
+        name="ym_raw",
+        kind="text",
+        required=True,
+        cast="year_month",
+        projection="coalesce",
+        bronze=("대여일자", "대여년월"),
+        silver=("ym_raw",),
+    )
+    frame = pd.DataFrame(
+        {"대여일자": ["2020-01", "2020-02", None, None], "대여년월": [None, None, "202301", None]}
+    )
+    assert coalesce_sources(frame, (role,)) == [
+        {"role": "ym_raw", "source": "대여일자", "rows": 2},
+        {"role": "ym_raw", "source": "대여년월", "rows": 1},
+        {"role": "ym_raw", "source": None, "rows": 1},
+    ]
