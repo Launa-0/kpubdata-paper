@@ -1,0 +1,315 @@
+{
+ "policy": {
+  "trades": "QualityPolicy(max_duplicate_rate=None, max_duplicate_rate_severity='warn', max_null_ratio={'price_10k_krw': 0.0, 'area_m2': 0.0, 'deal_date': 0.0}, max_null_ratio_severity={}, min_rows=None, min_rows_severity='warn', range=(RangeRule(column='price_10k_krw', min=6000.0, max=2500000.0, severity='warn'), RangeRule(column='area_m2', min=10.156, max=317.36, severity='warn'), RangeRule(column='deal_month', min=1, max=12, severity='warn'), RangeRule(column='deal_day', min=1, max=31, severity='warn')), compare_columns=())",
+  "bike": "QualityPolicy(max_duplicate_rate=None, max_duplicate_rate_severity='warn', max_null_ratio={'use_count': 0.0, 'station_code': 0.0, 'ym_raw': 0.0}, max_null_ratio_severity={}, min_rows=None, min_rows_severity='warn', range=(RangeRule(column='use_count', min=1.0, max=7451.0, severity='warn'), RangeRule(column='distance_m', min=0.0, max=65906208.59, severity='warn'), RangeRule(column='duration_min', min=-1.0, max=458960.0, severity='warn')), compare_columns=(CompareColumnsRule(left='distance_m', operator='gte', right='duration_min', severity='warn'),))"
+ },
+ "results": {
+  "T-P00": {
+   "kind": "P",
+   "status": "accepted",
+   "flags": []
+  },
+  "T-P01": {
+   "kind": "P",
+   "status": "accepted",
+   "flags": []
+  },
+  "T-P02": {
+   "kind": "P",
+   "status": "accepted",
+   "flags": []
+  },
+  "T-P03": {
+   "kind": "P",
+   "status": "rejected",
+   "error": "heterogeneous column types detected (refusing to silently coerce): ['dealAmount']"
+  },
+  "T-P04": {
+   "kind": "P",
+   "status": "accepted",
+   "flags": []
+  },
+  "T-P05": {
+   "kind": "P",
+   "status": "rejected",
+   "error": "heterogeneous column types detected (refusing to silently coerce): ['floor']"
+  },
+  "T-P06": {
+   "kind": "P",
+   "status": "accepted",
+   "flags": []
+  },
+  "T-P07": {
+   "kind": "P",
+   "status": "accepted",
+   "flags": []
+  },
+  "T-P08": {
+   "kind": "P",
+   "status": "accepted",
+   "flags": []
+  },
+  "T-P09": {
+   "kind": "P",
+   "status": "accepted",
+   "flags": []
+  },
+  "T-P10": {
+   "kind": "P",
+   "status": "accepted",
+   "flags": []
+  },
+  "T-P11": {
+   "kind": "P",
+   "status": "accepted",
+   "flags": []
+  },
+  "T-P12": {
+   "kind": "P",
+   "status": "accepted",
+   "flags": []
+  },
+  "T-B01": {
+   "kind": "B",
+   "status": "rejected",
+   "error": "declared rename refers to columns absent from the source: ['dealAmount']"
+  },
+  "T-B02": {
+   "kind": "B",
+   "status": "rejected",
+   "error": "declared rename refers to columns absent from the source: ['dealDay']"
+  },
+  "T-B03": {
+   "kind": "B",
+   "status": "rejected",
+   "error": "declared rename refers to columns absent from the source: ['sggCd']"
+  },
+  "T-B04": {
+   "kind": "B",
+   "status": "accepted",
+   "flags": [
+    "range:price_10k_krw:220"
+   ]
+  },
+  "T-B05": {
+   "kind": "B",
+   "status": "accepted",
+   "flags": [
+    "range:price_10k_krw:4971"
+   ]
+  },
+  "T-B06": {
+   "kind": "B",
+   "status": "accepted",
+   "flags": [
+    "range:area_m2:303"
+   ]
+  },
+  "T-B07": {
+   "kind": "B",
+   "status": "rejected",
+   "error": "declared cast dropped values to null (data loss): 'price_10k_krw': 4913 value(s) -> null; 'area_m2': 4971 value(s) -> null"
+  },
+  "T-B08": {
+   "kind": "B",
+   "status": "rejected",
+   "error": "declared rename refers to columns absent from the source: ['dealAmount']"
+  },
+  "T-B09": {
+   "kind": "B",
+   "status": "rejected",
+   "error": "derived column 'deal_date' dropped 3047 value(s) to null (data loss): parts that form no date, e.g. [{'deal_year': 2024, 'deal_month': 17, 'deal_day': 8}, {'dea"
+  },
+  "T-B10": {
+   "kind": "B",
+   "status": "accepted",
+   "flags": [
+    "max_null_ratio:price_10k_krw:498"
+   ]
+  },
+  "B-P00": {
+   "kind": "P",
+   "status": "accepted",
+   "flags": [
+    "compare_columns:distance_m,duration_min:413"
+   ]
+  },
+  "B-P01": {
+   "kind": "P",
+   "status": "accepted",
+   "flags": [
+    "compare_columns:distance_m,duration_min:413"
+   ]
+  },
+  "B-P02": {
+   "kind": "P",
+   "status": "accepted",
+   "flags": [
+    "compare_columns:distance_m,duration_min:413"
+   ]
+  },
+  "B-P03": {
+   "kind": "P",
+   "status": "accepted",
+   "flags": [
+    "compare_columns:distance_m,duration_min:413"
+   ]
+  },
+  "B-P04": {
+   "kind": "P",
+   "status": "rejected",
+   "error": "declared cast dropped values to null (data loss): 'exercise_kcal': 10 value(s) -> null; 'carbon_kg': 10 value(s) -> null"
+  },
+  "B-P05": {
+   "kind": "P",
+   "status": "accepted",
+   "flags": [
+    "compare_columns:distance_m,duration_min:413"
+   ]
+  },
+  "B-P06": {
+   "kind": "P",
+   "status": "accepted",
+   "flags": [
+    "compare_columns:distance_m,duration_min:413"
+   ]
+  },
+  "B-P07": {
+   "kind": "P",
+   "status": "rejected",
+   "error": "zfill target 'station_code' is Int64, not a string; declare read_as so the leading zeros survive reading"
+  },
+  "B-P08": {
+   "kind": "P",
+   "status": "accepted",
+   "flags": [
+    "compare_columns:distance_m,duration_min:413"
+   ]
+  },
+  "B-P09": {
+   "kind": "P",
+   "status": "accepted",
+   "flags": [
+    "compare_columns:distance_m,duration_min:413"
+   ]
+  },
+  "B-P10": {
+   "kind": "P",
+   "status": "accepted",
+   "flags": [
+    "compare_columns:distance_m,duration_min:413"
+   ]
+  },
+  "B-P11": {
+   "kind": "P",
+   "status": "accepted",
+   "flags": [
+    "compare_columns:distance_m,duration_min:413"
+   ]
+  },
+  "B-P12": {
+   "kind": "P",
+   "status": "accepted",
+   "flags": [
+    "compare_columns:distance_m,duration_min:413"
+   ]
+  },
+  "B-P13": {
+   "kind": "P",
+   "status": "accepted",
+   "flags": [
+    "compare_columns:distance_m,duration_min:413"
+   ]
+  },
+  "B-P14": {
+   "kind": "P",
+   "status": "accepted",
+   "flags": [
+    "compare_columns:distance_m,duration_min:413"
+   ]
+  },
+  "B-P15": {
+   "kind": "P",
+   "status": "accepted",
+   "flags": [
+    "compare_columns:distance_m,duration_min:413"
+   ]
+  },
+  "B-P16": {
+   "kind": "P",
+   "status": "accepted",
+   "flags": [
+    "compare_columns:distance_m,duration_min:413"
+   ]
+  },
+  "B-P17": {
+   "kind": "P",
+   "status": "accepted",
+   "flags": [
+    "compare_columns:distance_m,duration_min:413"
+   ]
+  },
+  "B-B01": {
+   "kind": "B",
+   "status": "rejected",
+   "error": "declared rename refers to columns absent from the source: ['이용건수']"
+  },
+  "B-B02": {
+   "kind": "B",
+   "status": "rejected",
+   "error": "declared rename refers to columns absent from the source: ['대여소번호']"
+  },
+  "B-B03": {
+   "kind": "B",
+   "status": "rejected",
+   "error": "declared rename refers to columns absent from the source: ['성별', '연령대코드']"
+  },
+  "B-B04": {
+   "kind": "B",
+   "status": "rejected",
+   "error": "declared rename refers to columns absent from the source: ['이용건수']"
+  },
+  "B-B05": {
+   "kind": "B",
+   "status": "accepted",
+   "flags": [
+    "compare_columns:distance_m,duration_min:4895"
+   ]
+  },
+  "B-B06": {
+   "kind": "B",
+   "status": "accepted",
+   "flags": [
+    "range:duration_min:206",
+    "compare_columns:distance_m,duration_min:4542"
+   ]
+  },
+  "B-B07": {
+   "kind": "B",
+   "status": "accepted",
+   "flags": [
+    "compare_columns:distance_m,duration_min:714"
+   ]
+  },
+  "B-B08": {
+   "kind": "B",
+   "status": "rejected",
+   "error": "year_month cast on 'ym_raw' rejected 4959 value(s); expected YYYY-MM or YYYYMM, got: ['2020-01-15', '2020-02-15', '2020-05-15']"
+  },
+  "B-B09": {
+   "kind": "B",
+   "status": "rejected",
+   "error": "coalesce target 'ym_raw' has 4959 row(s) where candidates disagree; first example: {'대여일자': '2020-01', '대여년월': '2020-02'}"
+  },
+  "B-B10": {
+   "kind": "B",
+   "status": "accepted",
+   "flags": [
+    "max_null_ratio:use_count:496",
+    "compare_columns:distance_m,duration_min:413"
+   ]
+  }
+ },
+ "builder": "0.4.0.dev0+096d023f9546",
+ "paper_sha": "4fcca24e0506aaaa9bd018c58542ce8a84a348b4"
+}

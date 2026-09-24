@@ -1,0 +1,40 @@
+{
+  "build_id": "139dafb15e0ecadf",
+  "built_at": "2026-09-24T16:12:05.490099+09:00",
+  "columns": [
+    "station_code",
+    "station_name",
+    "pass_type",
+    "gender",
+    "age_band",
+    "use_count",
+    "exercise_kcal",
+    "carbon_kg",
+    "ym_raw",
+    "distance_m",
+    "duration_min"
+  ],
+  "environment": {
+    "packages": {
+      "kpubdata": "0.6.0",
+      "kpubdata-builder": "0.4.0.dev0+096d023f9546"
+    },
+    "platform": "unknown",
+    "python_version": "3.13.2"
+  },
+  "inputs": {
+    "config_hash": "f9f6813c911053eb11f31ce662b737729a48efa5baac8de65ba539e044432c22",
+    "dataset": "seoul-bike-rent-month",
+    "layer": "silver",
+    "pipeline_version": "0.4.0.dev0+096d023f9546+f9f6813c9110",
+    "snapshot_id": "seoul-bike-rent-month/20260923-637ec21bb5b1",
+    "upstream_build_id": "d26c86f8779b7bdf"
+  },
+  "kpx_version": "0.1.0",
+  "output_checksum": "b0843989fd9ca91783d854121ae0dac4ef20f37714a4d5787de4dedd498b3d8a",
+  "output_file_count": 5,
+  "output_size_bytes": 68957358,
+  "row_count": 4902236,
+  "schema_version": 1,
+  "status": "ok"
+}

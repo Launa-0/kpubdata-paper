@@ -1,0 +1,61 @@
+{
+  "build_id": "ea2c1853be0f847f",
+  "built_at": "2026-09-24T16:11:59.343963+09:00",
+  "columns": [
+    "aptDong",
+    "aptNm",
+    "aptSeq",
+    "bonbun",
+    "bubun",
+    "buildYear",
+    "buyerGbn",
+    "cdealDay",
+    "cdealType",
+    "dealAmount",
+    "dealDay",
+    "dealMonth",
+    "dealYear",
+    "dealingGbn",
+    "estateAgentSggNm",
+    "excluUseAr",
+    "floor",
+    "jibun",
+    "landCd",
+    "landLeaseholdGbn",
+    "rgstDate",
+    "roadNm",
+    "roadNmBonbun",
+    "roadNmBubun",
+    "roadNmCd",
+    "roadNmSeq",
+    "roadNmSggCd",
+    "roadNmbCd",
+    "sggCd",
+    "slerGbn",
+    "umdCd",
+    "umdNm"
+  ],
+  "environment": {
+    "packages": {
+      "kpubdata": "0.6.0",
+      "kpubdata-builder": "0.4.0.dev0+096d023f9546"
+    },
+    "platform": "unknown",
+    "python_version": "3.13.2"
+  },
+  "inputs": {
+    "config_hash": "226f0ff82769b31284106b701518adc3ec793877a04eebcdc2469d719b72cd39",
+    "dataset": "seoul-apartment-trades",
+    "layer": "bronze",
+    "pipeline_version": "0.4.0.dev0+096d023f9546+226f0ff82769",
+    "snapshot_id": "seoul-apartment-trades/20260922-6660c8e25162",
+    "upstream_build_id": null
+  },
+  "kpx_version": "0.1.0",
+  "output_checksum": "0100a936f4c924eb1d72e9bcfdca93d4bc678398dbf89393a715164c69ae612a",
+  "output_file_count": 2,
+  "output_size_bytes": 147109079,
+  "row_count": 233596,
+  "schema_version": 1,
+  "status": "ok"
+}

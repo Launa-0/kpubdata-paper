@@ -403,6 +403,25 @@ return monthly_rent_10k.eq(0)            # 현재
 
 ---
 
+## Canonical 실행 매핑
+
+timing을 뺀 최종 결과는 논문 커밋 `4fcca24`, 빌더 `096d023`(`paper-eval-builder-096d023`)에서
+`scripts/canonical.sh`로 한 번 만들었다. clean tree에서 14단계가 모두 성공했고, timing 결과
+파일은 실행 전후 sha256이 같다.
+
+- 행 단위 결과 스키마에는 builder / config / build provenance가 들어 있다. 논문 커밋과 결과
+  파일 hash는 `results/canonical_manifest.json`에 적었다 (`scripts/canonical_manifest.py`가
+  실행 identity와 결과 파일에서 만든다).
+- 실행에 쓴 driver와 레포의 `scripts/canonical.sh`는 첫 `cd` 줄만 다르다. 실행본은 절대경로로,
+  레포본은 스크립트 위치 기준으로 이동한다.
+- 이전 파일 대비 달라진 값은 하나다. RQ1 `rq1_role_pair`의 `deal_date`·`contract_date`
+  `representation_change_rate`가 0에서 1.0이 됐다. **측정 로직 수정에 따른 변화**다. Silver
+  바이트와 config는 같고, 이전 파일은 날짜 투영 수정 전 harness에서 나왔다
+  (`rq1-transition-classification.md`). 현재 분류기의 `rq1_role_transition`과는 불일치가 0이다.
+- Perturbation은 의미가 깨지는 변형 20개 중 12 reject / 8 silent pass다. `5d86eed` 기준 11 / 9에서
+  T-B09가 reject로 바뀐 것은 이번 실행에서 생긴 변화가 아니다. 빌더 correctness 수정이 들어간
+  `096d023`에서 이미 그랬고, 이번 실행은 그것을 재현했다.
+
 ## 동결 전 일괄 동기화 (TODO)
 
 아래는 **timing 전에 하나씩 고치지 않는다.** timing 결과가 나온 뒤 protocol freeze 때 한

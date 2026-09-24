@@ -1,0 +1,45 @@
+{
+  "build_id": "d26c86f8779b7bdf",
+  "built_at": "2026-09-24T16:12:05.367322+09:00",
+  "columns": [
+    "대여구분코드",
+    "대여년월",
+    "대여소명",
+    "대여소번호",
+    "대여일자",
+    "성별",
+    "연령대코드",
+    "운동량",
+    "이동거리",
+    "이동거리(M)",
+    "이용거리(M)",
+    "이용건수",
+    "이용시간",
+    "이용시간(본)",
+    "이용시간(분)",
+    "탄소량"
+  ],
+  "environment": {
+    "packages": {
+      "kpubdata": "0.6.0",
+      "kpubdata-builder": "0.4.0.dev0+096d023f9546"
+    },
+    "platform": "unknown",
+    "python_version": "3.13.2"
+  },
+  "inputs": {
+    "config_hash": "f9f6813c911053eb11f31ce662b737729a48efa5baac8de65ba539e044432c22",
+    "dataset": "seoul-bike-rent-month",
+    "layer": "bronze",
+    "pipeline_version": "0.4.0.dev0+096d023f9546+f9f6813c9110",
+    "snapshot_id": "seoul-bike-rent-month/20260923-637ec21bb5b1",
+    "upstream_build_id": null
+  },
+  "kpx_version": "0.1.0",
+  "output_checksum": "b75282130b4e096d937163b6de4fbd891881a23491603ff3600faa93d0491bd9",
+  "output_file_count": 2,
+  "output_size_bytes": 1519293263,
+  "row_count": 4902236,
+  "schema_version": 1,
+  "status": "ok"
+}
