@@ -1,6 +1,9 @@
 """Task 3 / Silver 조건 — 두 canonical 데이터셋에서 시작한다.
 
-타입은 맞고 금액은 숫자이며 단지명도 이미 정규화돼 있다. 남은 준비는 과제가
+타입은 맞고 금액은 숫자다. **단지명은 정규화돼 있지 않다** — Silver 계약은
+``aptNm``을 ``apt_name``으로 이름만 바꾸고, builder에는 단지명 정규화 규칙이 없다.
+그래서 조인 키를 맞추는 일은 여기서 한다. 빼면 Bronze와 다른 정제를 하게 되어
+매칭률이 달라진다 (``task03_join`` 모듈 문서의 통제 조건). 남은 준비는 과제가
 필요로 하는 파생값(면적 구간, ㎡당 금액)과 조인·집계다.
 """
 
@@ -15,6 +18,7 @@ from kpx.tasks.task03_join.transforms import (
     is_jeonse,
     join_diagnostics,
     join_sales_and_jeonse,
+    normalize_apt_name,
     to_year_month,
     unit_price,
 )
@@ -29,6 +33,7 @@ class Runner:
         rents = ctx.load("seoul-apartment-rent")
 
         with ctx.step("derive_sale_keys"):
+            trades["apt_name"] = trades["apt_name"].map(normalize_apt_name)
             trades["year_month"] = [
                 to_year_month(year, month)
                 for year, month in zip(trades["deal_year"], trades["deal_month"], strict=True)
@@ -40,6 +45,7 @@ class Runner:
             rents = rents[is_jeonse(rents["monthly_rent_10k_krw"])].copy()
 
         with ctx.step("derive_jeonse_keys"):
+            rents["apt_name"] = rents["apt_name"].map(normalize_apt_name)
             rents["year_month"] = [
                 to_year_month(year, month)
                 for year, month in zip(rents["deal_year"], rents["deal_month"], strict=True)
