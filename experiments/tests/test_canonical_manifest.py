@@ -60,7 +60,8 @@ def test_the_counterfactual_file_agrees_with_the_manifest_provenance() -> None:
     가르는 근거가 이것이었다.
     """
     manifest = _manifest()
-    payload = json.loads((_RESULTS / "perturbation_counterfactual.json").read_text(encoding="utf-8"))
+    counterfactual = _RESULTS / "perturbation_counterfactual.json"
+    payload = json.loads(counterfactual.read_text(encoding="utf-8"))
 
     assert payload["paper_sha"] == manifest["paper_sha"]
     assert payload["builder"] == manifest["builder_identity"]
