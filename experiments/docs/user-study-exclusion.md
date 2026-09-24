@@ -18,10 +18,8 @@ that the paper states the limitation rather than leaving a reader to infer it.
 Five reasons, and they compound rather than sit side by side:
 
 * **Sample size.** Five to eight participants across four conditions leaves
-  almost nothing per cell. The statistics module already shows what small n does
-  to this design — at five paired observations a Wilcoxon test cannot reach
-  α = 0.05 at all ([statistics.md](statistics.md)) — and a user study would be
-  smaller and noisier than the machine measurements, not larger.
+  almost nothing per cell, and between-person variation is far larger than the
+  variation in the machine measurements.
 * **Variation in Python proficiency.** Between-subject skill differences would
   dominate a between-condition effect at this sample size.
 * **Variation in analysis experience.** Familiarity with public-data quirks —
@@ -38,9 +36,9 @@ Five reasons, and they compound rather than sit side by side:
 This is the part that belongs in the paper rather than in a planning document.
 
 **The study measures the cost of the code, not the cost of the analyst.** RQ2
-asks how much work a condition takes before analysis can begin, and answers with
-`preprocessing_loc`, transformation function and step counts, runtime and peak
-memory. Every one of those is a property of a program. None of them is a
+asks how much preparation a condition takes before analysis can begin and what
+recomputation costs, and answers with `preprocessing_loc`, `function_count` and
+timed recomputation. Every one of those is a property of a program. None of them is a
 measure of human time, comprehension, or the number of attempts a person needs
 before the parse is right.
 
@@ -51,10 +49,9 @@ wrong number — the Bronze `"120,000"` read as `120` — may cost far more huma
 time than its line count suggests while costing a machine nothing.
 
 So the claim the paper can support is narrower than "layering reduces analyst
-effort". It is that layering reduces the *volume and complexity of the
-preparation code*, measured four ways, with data quality and correctness
-measured separately. Where the results section speaks of "analytical effort",
-that is what the phrase denotes.
+effort". It is about the *volume of preparation code* each condition needs,
+with representation changes (RQ1) and reproducibility (RQ3)
+measured separately. The paper does not call this "analytical effort".
 
 ## The exploratory study
 
@@ -69,10 +66,9 @@ decision is not re-litigated from scratch if the slack appears.
 
 ## Threats to Validity — Construct Validity, human cost (draft)
 
-> **What "analytical effort" denotes.** RQ2 is operationalized entirely through
-> automated measurements of the preparation code — lines, distinct
-> transformation functions, logical transformation steps, cyclomatic complexity,
-> wall-clock runtime and peak memory. We deliberately excluded a user study from
+> **What RQ2 measures.** RQ2 is operationalized entirely through automated
+> measurements — the lines and distinct transformation functions of the
+> preparation code, and the wall-clock time of recomputation. We deliberately excluded a user study from
 > the main experiment: with five to eight available participants spread over
 > four conditions, between-subject variation in Python proficiency and in prior
 > exposure to Korean public-data conventions would have dominated any
@@ -86,7 +82,7 @@ decision is not re-litigated from scratch if the slack appears.
 > where the difference matters most — a Bronze-layer failure in which a
 > comma-formatted amount is silently parsed as a smaller number costs a machine
 > nothing and an analyst a great deal. Accordingly we claim that higher layers
-> reduce the volume and complexity of preparation code, with data quality and
-> analytical correctness reported separately, and we do not claim a measured
+> reduce the volume of preparation code, with the equivalence of analytical
+> results checked as a validity condition, and we do not claim a measured
 > reduction in human effort. Any exploratory study conducted later is reported
 > as auxiliary observation and is not used to support a main conclusion.

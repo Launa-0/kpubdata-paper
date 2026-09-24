@@ -240,6 +240,9 @@ def assert_row_identity(
     time and main fact — must read the same on every row before anything is
     paired.
 
+    The guard sees only the required roles, so it cannot catch two rows swapped
+    between records whose required roles read the same.
+
     This is a precondition, not a finding. Once it passes, the required roles'
     ``semantic_preservation_rate`` is 1.0 by construction and says nothing on
     its own; only the optional roles' preservation is still measured.

@@ -159,7 +159,7 @@ def test_an_unreachable_public_helper_is_not_measured(
 def test_shared_transformations_are_counted_but_not_charged(
     bronze: ModuleType, transforms: ModuleType
 ) -> None:
-    """Every condition draws on the same helpers; charging them compresses H2."""
+    """Every condition draws on the same helpers; charging them compresses the RQ2 comparison."""
     metrics = measure_preparation(bronze.Runner(), transforms=transforms)
     assert metrics.transformations == ("normalize_district", "parse_deal_date", "parse_price")
     # the three helper bodies are 6 effective lines that are not in the total
@@ -190,7 +190,7 @@ def test_function_count_covers_helpers_and_transformations(
 def test_bronze_costs_more_than_silver(
     bronze: ModuleType, silver: ModuleType, transforms: ModuleType
 ) -> None:
-    """The direction H2 predicts, on fixtures written to be honest about it."""
+    """The direction the RQ2 comparison expects, on fixtures written to be honest about it."""
     cheap = measure_preparation(silver.Runner(), transforms=transforms)
     dear = measure_preparation(bronze.Runner(), transforms=transforms)
     assert dear.preprocessing_loc > cheap.preprocessing_loc

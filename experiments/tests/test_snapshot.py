@@ -193,7 +193,7 @@ class TestScanJsonl:
     """A snapshot's row count and schema are read from the bytes, not typed in.
 
     Registering by hand means row_count and columns are whatever the person
-    typed, and a typo there is invisible — it lands in Table 1 as fact.
+    typed, and a typo there is invisible — it lands in the dataset table as fact.
     """
 
     def test_counts_rows_across_every_jsonl_file(self, tmp_path: Path) -> None:

@@ -273,7 +273,7 @@ class TestTransformationRecipe:
         )
 
     def test_values_that_change_every_run_are_left_out(self) -> None:
-        """이것들이 들어가면 R1의 반복 빌드와 R2의 T1/T2/T3가 서로 다른 파이프라인이
+        """이것들이 들어가면 R1의 반복 빌드와 R2의 세대별 빌드가 서로 다른 파이프라인이
         되어 버린다 — 고치려던 것과 정반대의 고장이다."""
         other_run = {**self.SPEC["source"], "upload_id": "upl_ffffffff"}  # type: ignore[dict-item]
 

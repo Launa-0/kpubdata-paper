@@ -87,7 +87,7 @@ class TestRunCondition:
         assert row.output_hash
 
     def test_rows_counts_the_prepared_input_not_the_layer(self) -> None:
-        # Table 4 reports what preparation cost; filtering is part of that cost.
+        # rows report what preparation cost; filtering is part of that cost.
         # A row count taken from the layer would erase the difference between
         # conditions that filter and conditions that do not.
         row = run_condition(

@@ -170,7 +170,7 @@ def test_type_consistency_is_undefined_without_typed_columns() -> None:
 
 
 def test_schema_conformance_applies_an_exclusive_lower_bound() -> None:
-    """The bounds H1 cares about are price > 0 and area > 0."""
+    """The bounds the quality spec checks are price > 0 and area > 0."""
     frame = pd.DataFrame({"price_krw": [1.0, 0.0, -2.0]})
     spec = QualitySpec(columns=(ColumnSpec(column="price_krw", role="price", minimum=0),))
     assert measure_quality(frame, spec, layer="silver").schema_conformance == pytest.approx(1 / 3)
