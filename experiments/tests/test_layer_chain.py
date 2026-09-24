@@ -19,6 +19,7 @@ from kpx.pipeline import (
     PipelineVersion,
     assert_same_inputs,
     record_derived_layer,
+    record_joined_layer,
     record_layer_chain,
 )
 from kpx.provenance import Provenance, ProvenanceError, ProvenanceStore
@@ -300,3 +301,104 @@ class TestMixingArtifacts:
         recorded = chain(run_dir, store)
 
         assert_same_inputs([recorded["bronze"], recorded["silver"]])
+
+
+RENT = dataclasses.replace(
+    SNAPSHOT,
+    snapshot_id="seoul-apartment-rent/20260923-a0ed9577c41a",
+    dataset="seoul-apartment-rent",
+)
+
+
+def join(
+    artifact: Path, upstreams: list[Provenance], store: ProvenanceStore, **kwargs: object
+) -> Provenance:
+    artifact.mkdir(exist_ok=True)
+    (artifact / "joined.parquet").write_text("joined bytes", encoding="utf-8")
+    defaults: dict[str, object] = {
+        "dataset": "seoul-apartment-trades-rent-monthly",
+        "layer": "gold",
+        "upstreams": upstreams,
+        "recipe": GOLD_RECIPE,
+        "row_count": 1500,
+        "columns": ("district_code", "year_month"),
+        "store": store,
+    }
+    defaults.update(kwargs)
+    return record_joined_layer(artifact, **defaults)  # type: ignore[arg-type]
+
+
+class TestJoinedLayer:
+    """두 원천을 잇는 층 (T3). 스키마는 입력 하나를 전제하므로 합성 식별자로 적는다."""
+
+    def silvers(self, run_dir: Path, store: ProvenanceStore) -> list[Provenance]:
+        trades = chain(run_dir, store)["silver"]
+        rent = chain(run_dir, store, snapshot=RENT)["silver"]
+        return [trades, rent]
+
+    def test_every_input_is_named_in_a_fixed_order(
+        self, run_dir: Path, store: ProvenanceStore, tmp_path: Path
+    ) -> None:
+        trades, rent = self.silvers(run_dir, store)
+
+        gold = join(tmp_path / "gold", [trades, rent], store)
+
+        # dataset 이름 순서: rent가 trades보다 앞이다.
+        assert gold.inputs.snapshot_id == f"{RENT.snapshot_id}|{SNAPSHOT.snapshot_id}"
+        assert gold.inputs.upstream_build_id == f"{rent.build_id}|{trades.build_id}"
+        assert gold.inputs.pipeline_version == (
+            f"{rent.inputs.pipeline_version}|{trades.inputs.pipeline_version}"
+        )
+
+    def test_the_order_the_inputs_are_passed_in_does_not_matter(
+        self, run_dir: Path, store: ProvenanceStore, tmp_path: Path
+    ) -> None:
+        trades, rent = self.silvers(run_dir, store)
+
+        forward = join(tmp_path / "gold", [trades, rent], store)
+        backward = join(tmp_path / "gold", [rent, trades], store)
+
+        assert forward.build_id == backward.build_id
+
+    def test_lineage_walks_both_inputs_to_their_bronze(
+        self, run_dir: Path, store: ProvenanceStore, tmp_path: Path
+    ) -> None:
+        trades, rent = self.silvers(run_dir, store)
+        gold = join(tmp_path / "gold", [trades, rent], store)
+
+        lineage = store.lineage(gold.build_id)
+
+        assert [build.inputs.layer for build in lineage].count("bronze") == 2
+        assert {build.build_id for build in lineage} >= {trades.build_id, rent.build_id}
+        assert lineage[-1] == gold
+        # 부모는 언제나 자식보다 앞에 온다.
+        position = {build.build_id: index for index, build in enumerate(lineage)}
+        assert position[trades.inputs.upstream_build_id] < position[trades.build_id]  # type: ignore[index]
+
+    def test_one_input_is_not_a_join(
+        self, run_dir: Path, store: ProvenanceStore, tmp_path: Path
+    ) -> None:
+        trades, _ = self.silvers(run_dir, store)
+
+        with pytest.raises(ProvenanceError, match="record_derived_layer"):
+            join(tmp_path / "gold", [trades], store)
+
+    def test_two_builds_of_one_dataset_are_refused(
+        self, run_dir: Path, store: ProvenanceStore, tmp_path: Path
+    ) -> None:
+        """같은 데이터셋 두 빌드를 잇는 것은 조인이 아니라 섞임이다."""
+        trades, _ = self.silvers(run_dir, store)
+
+        with pytest.raises(ProvenanceError, match="more than once"):
+            join(tmp_path / "gold", [trades, trades], store)
+
+    def test_an_input_that_already_contains_the_separator_is_refused(
+        self, run_dir: Path, store: ProvenanceStore, tmp_path: Path
+    ) -> None:
+        """합성값을 다시 가를 수 없게 되면 식별자가 모호해진다."""
+        trades, rent = self.silvers(run_dir, store)
+        inputs = dataclasses.replace(rent.inputs, pipeline_version="0.4|x")
+        odd = dataclasses.replace(rent, inputs=inputs, build_id=inputs.build_id)
+
+        with pytest.raises(ProvenanceError, match="separator"):
+            join(tmp_path / "gold", [trades, odd], store)

@@ -67,12 +67,18 @@ def _bronze_rents() -> pd.DataFrame:
 
 
 def _silver_trades() -> pd.DataFrame:
-    """canonical 표현 — 타입이 맞고 단지명도 이미 정규화돼 있다."""
+    """계약이 만드는 표현 — 타입은 맞지만 단지명은 rename만 됐다.
+
+    trades_spec/rent_spec은 ``aptNm``을 ``apt_name``으로 **이름만** 바꾼다. fixture가
+    여기서 이름을 정규화해 두면, Silver 조건이 정규화를 빠뜨려도 동등성 테스트가
+    통과한다 — 실데이터에서 Silver의 매칭률이 Bronze와 달라진 것을 이 테스트가
+    못 본 이유다.
+    """
     frame = _bronze_trades()
     return pd.DataFrame(
         {
             "district_code": frame["sggCd"],
-            "apt_name": frame["aptNm"].map(tf.normalize_apt_name),
+            "apt_name": frame["aptNm"],
             "area_m2": frame["excluUseAr"].astype(float),
             "price_10k_krw": frame["dealAmount"].map(tf.parse_amount_10k),
             "deal_year": frame["dealYear"],
@@ -86,7 +92,7 @@ def _silver_rents() -> pd.DataFrame:
     return pd.DataFrame(
         {
             "district_code": frame["sggCd"],
-            "apt_name": frame["aptNm"].map(tf.normalize_apt_name),
+            "apt_name": frame["aptNm"],
             "area_m2": frame["excluUseAr"].astype(float),
             "deposit_10k_krw": frame["deposit"].map(tf.parse_amount_10k),
             "monthly_rent_10k_krw": frame["monthlyRent"].map(tf.parse_amount_10k),
