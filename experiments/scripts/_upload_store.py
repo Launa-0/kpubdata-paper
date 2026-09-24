@@ -3,7 +3,7 @@
 빌더가 딸려 보내는 ``SQLiteUploadRepository``는 content를 BLOB으로 넣는다. SQLite의
 기본 ``SQLITE_MAX_LENGTH``가 10억 바이트(약 953 MiB)라서, 그보다 큰 스냅샷은
 ``sqlite3.DataError: string or blob too big``으로 **빌드가 시작되기도 전에** 멈춘다.
-따릉이 T4 통합본(1,444 MiB)이 실제로 거기서 걸렸다.
+따릉이 통합 스냅샷(G1+G2+I1+G3, 1,444 MiB)이 실제로 거기서 걸렸다.
 
 빌더를 고칠 일은 아니다. 서비스는 업로드 크기에 상한을 두는 것이 맞고, 여기서 다루는
 것은 사용자 업로드가 아니라 **우리가 얼려 둔 실험 원천**이다. ``UploadRepository``가

@@ -61,11 +61,6 @@ class TestLayerStore:
         with pytest.raises(DatasetNotBuilt, match="not built"):
             store.path_for("trades", "gold")
 
-    def test_size_is_the_artifact_on_disk(self, silver: Path) -> None:
-        store = LayerStore({("trades", "silver"): silver})
-
-        assert store.size_bytes("trades", "silver") == silver.stat().st_size
-
 
 class TestSchemaReport:
     """Silver의 스키마는 문서로 남아야 한다 (#7).

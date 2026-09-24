@@ -8,7 +8,6 @@ modules implementing :class:`kpx.contract.ConditionRunner`:
 ``task03_join``             Trade + rent integration, jeonse ratio
 ==========================  ==================================================
 
-T2 (price prediction) and T4 (bike time series) were planned and dropped; see
-``docs/experiment-design-revisions.md``. The bike data stays in the study for
-RQ1 and source evolution, not as a downstream task.
+These are the only downstream tasks. The bike data serves RQ1 and the source
+evolution experiment, not a downstream task.
 """

@@ -54,11 +54,6 @@ def test_info_lists_conditions_and_layers(capsys: pytest.CaptureFixture[str]) ->
     assert "gold" in out
 
 
-def test_info_states_the_measurement_protocol(capsys: pytest.CaptureFixture[str]) -> None:
-    assert main(["info"]) == 0
-    assert "1 warm-up + 5 measured runs" in capsys.readouterr().out
-
-
 def test_env_prints_the_methodology_block(capsys: pytest.CaptureFixture[str]) -> None:
     assert main(["env"]) == 0
     out = capsys.readouterr().out
@@ -308,14 +303,6 @@ class TestRunCommand:
     def test_an_unknown_condition_is_an_error(self) -> None:
         assert main(["run", "--task", "task01", "--condition", "platinum"]) == 2
 
-    def test_the_measurement_protocol_is_the_harness_default(self) -> None:
-        from kpx.cli import build_parser
-        from kpx.metrics.runtime import MEASURED_RUNS, WARMUP_RUNS
-
-        args = build_parser().parse_args(["run", "--task", "task01", "--condition", "gold"])
-
-        assert (args.warmup, args.repeat) == (WARMUP_RUNS, MEASURED_RUNS)
-
     def test_a_run_without_layers_says_so_instead_of_crashing(self) -> None:
         assert main(["run", "--task", "task01", "--condition", "gold"]) == 2
 
@@ -380,10 +367,6 @@ class TestRunCommand:
                     "0.1.0+b545c2bd9a32",
                     "--results",
                     str(results),
-                    "--warmup",
-                    "0",
-                    "--repeat",
-                    "1",
                 ]
             )
             == 0

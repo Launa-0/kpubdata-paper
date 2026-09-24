@@ -18,7 +18,7 @@ from kpx.metrics.reproducibility import (  # noqa: E402
     BuildOutcome,
     digest_distribution,
     measure_reproducibility,
-    table5,
+    reproducibility_table,
 )
 
 
@@ -53,7 +53,7 @@ def main(argv: list[str] | None = None) -> int:
     print(f"  schema equality    : {report.schema_equality}")
     print(f"  build time 중앙값  : {seconds[len(seconds) // 2]:.1f}s")
     print()
-    print(table5({"medallion": report}).to_string(index=False))
+    print(reproducibility_table({"medallion": report}).to_string(index=False))
 
     if report.distinct_digests > 1:
         print("\n  [!] digest가 갈렸다 — 분포:")

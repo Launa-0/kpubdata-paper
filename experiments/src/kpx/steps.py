@@ -1,8 +1,8 @@
 """Transformation step recording.
 
-H2 asks how many *transformation steps* a condition needs before analysis can
-start. Counting those by hand invites bias, so a step is instead recorded by the
-preparation code as it runs::
+RQ2 records how many *transformation steps* a condition needs before analysis can
+start, as a diagnostic beside the code metrics. Counting those by hand invites
+bias, so a step is instead recorded by the preparation code as it runs::
 
     with ctx.step("parse_price"):
         df["price_krw"] = df["거래금액"].map(parse_price)
@@ -10,8 +10,7 @@ preparation code as it runs::
 The recorder gives three things at once:
 
 * an objective ``transformation_steps`` count for :mod:`kpx.metrics.code_metrics`,
-* a per-step wall-clock breakdown, useful when one condition's runtime is
-  dominated by a single parse,
+* a per-step wall-clock breakdown, for locating where preparation spends time,
 * a readable trace of what each condition actually had to do, which is the
   qualitative material for the Results section.
 

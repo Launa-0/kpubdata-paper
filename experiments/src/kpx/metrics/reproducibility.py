@@ -1,16 +1,12 @@
-"""Rebuild determinism for RQ4/H4: does the same source give the same output?
+"""R1 rebuild determinism (RQ3): does the same source give the same output?
 
-H4 predicts that a layered pipeline rebuilds deterministically — the same frozen
-source, the same code and the same configuration produce byte-identical output.
-This module turns a set of repeated builds into that verdict.
+The same frozen source, the same code and the same configuration should produce
+byte-identical output. This module turns a set of repeated builds of the
+Medallion pipeline into that verdict. It is not a comparison against the
+monolithic baseline — R1 makes no claim that layering is more deterministic.
 
-The claim is only worth making as a comparison. "Medallion is deterministic" on
-its own says little; measured against the monolithic baseline it either shows an
-advantage or shows that determinism is not where layering helps. Both are
-results, so both conditions are measured the same way.
-
-Two ways this measurement could manufacture H4, and what stops each
-------------------------------------------------------------------
+Two ways this measurement could manufacture a clean verdict, and what stops each
+-------------------------------------------------------------------------------
 
 **Counting failed builds as agreement.** A run that failed produced no output.
 If nine of ten builds fail and the tenth succeeds, there is exactly one digest —
@@ -18,7 +14,7 @@ which is not evidence of determinism but evidence that there was nothing to
 compare. Equality is computed over successful builds only, and a verdict needs
 **at least two** of them; below that the verdict is ``None``, not ``True``.
 
-**Hiding a low success rate behind a clean equality.** :func:`table5` prints the
+**Hiding a low success rate behind a clean equality.** :func:`reproducibility_table` prints the
 build success rate in the same row as the equality verdicts, so a "True" bought
 by eight failures is visible at the same glance as the "True".
 """
@@ -32,7 +28,7 @@ from typing import Any
 
 import pandas as pd
 
-TABLE5_COLUMNS = (
+REPRODUCIBILITY_COLUMNS = (
     "Condition",
     "Builds",
     "Success rate",
@@ -120,7 +116,7 @@ def measure_reproducibility(outcomes: Sequence[BuildOutcome]) -> Reproducibility
 
 
 def digest_distribution(outcomes: Sequence[BuildOutcome]) -> dict[str, int]:
-    """How many builds landed on each digest — the record H4 asks for on failure.
+    """How many builds landed on each digest — what to inspect when the verdict fails.
 
     When determinism breaks, the split itself is the finding: two digests at 5/5
     points somewhere different from nine at 9/1.
@@ -135,8 +131,8 @@ def _verdict(value: bool | None) -> str:
     return "—" if value is None else str(value)
 
 
-def table5(reports: Mapping[str, ReproducibilityReport]) -> pd.DataFrame:
-    """Table 5 (Reproducibility): one row per condition.
+def reproducibility_table(reports: Mapping[str, ReproducibilityReport]) -> pd.DataFrame:
+    """The determinism table: one row per condition.
 
     The success rate sits beside the equality verdicts on purpose — an equality
     bought by failures should not be readable without the failures.
@@ -153,4 +149,4 @@ def table5(reports: Mapping[str, ReproducibilityReport]) -> pd.DataFrame:
         }
         for condition, report in reports.items()
     ]
-    return pd.DataFrame(rows, columns=list(TABLE5_COLUMNS))
+    return pd.DataFrame(rows, columns=list(REPRODUCIBILITY_COLUMNS))

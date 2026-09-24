@@ -165,7 +165,7 @@ def join_sales_and_jeonse(sales: pd.DataFrame, jeonse: pd.DataFrame) -> pd.DataF
 def join_diagnostics(
     sales: pd.DataFrame, jeonse: pd.DataFrame, matched: pd.DataFrame
 ) -> dict[str, float]:
-    """조인이 얼마나 맞았는지 — RQ3가 Task 3에서 재는 값.
+    """조인이 얼마나 맞았는지 — T3의 진단값 (네 조건에서 같아야 한다).
 
     ``join_matching_rate`` 의 분모는 매매 쪽 키 수다. 전세가율은 매매 거래마다
     묻는 값이므로, "이 매매 거래에 짝지을 전세가 있었는가"가 답해야 할 질문이다.

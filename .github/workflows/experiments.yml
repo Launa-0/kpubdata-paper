@@ -26,7 +26,7 @@ jobs:
       - uses: astral-sh/setup-uv@v5
         with:
           enable-cache: true
-      - run: uv sync --extra dev --extra analysis
+      - run: uv sync --extra dev
       # scripts/ 도 검사한다. 논문의 숫자를 만드는 절차가 거기 있고, 검사하지
       # 않으면 재현 절차만 조용히 썩는다. mypy는 제외한다 — 빌드 스크립트가
       # kpubdata-builder를 import하는데 그것은 이 환경에 설치되지 않는다.

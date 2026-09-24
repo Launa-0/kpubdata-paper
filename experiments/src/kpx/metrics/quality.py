@@ -6,10 +6,8 @@ In RQ1 they are an **integrity check**, not the finding: the builder refuses a
 build whose declared casts lose values, so once Bronze is read with the
 contract's own parsers a successful build cannot differ from its Silver on the
 comparable metrics. What standardization changed is measured cell by cell in
-:mod:`kpx.metrics.pairing`. (The original hypothesis — that Silver *improves*
-these metrics — and why it was retired are recorded in
-``docs/experiment-design-revisions.md``.) The ``H1_*`` names below are kept
-because the stored result schema uses them.
+:mod:`kpx.metrics.pairing`, as role × transition-cause counts — that is RQ1's
+primary result.
 
 The hard part is not computing rates. It is making sure the rates compare the
 same thing, because Bronze and Silver do not even use the same column names —
@@ -29,15 +27,15 @@ keyed by the cast in the contract — and Bronze is credited with every value th
 build could read. What remains a failure is a value the pipeline could not parse
 either.
 
-**Improving a rate by dropping rows.** A Silver build that deletes rows with
-nulls reports a better missing rate for a reason that has nothing to do with
+**Changing a rate by dropping rows.** A Silver build that deletes rows with
+nulls reports a lower missing rate for a reason that has nothing to do with
 standardization. Two things make that visible rather than invisible:
 
 * missing rate is reported **per required column** as well as overall, so a
-  column that improved by disappearing does not hide inside an average, and
-* :func:`table2` prints the **row count of each layer in the same table**, so a
-  reduction bought by dropping rows is visible at the same glance as the
-  reduction.
+  column that changed by disappearing does not hide inside an average, and
+* every report carries the **row count of its layer**, and
+  ``scripts/quality_spectrum.py`` stores it beside the rates, so a change bought
+  by dropping rows is visible next to the change itself.
 
 The metrics
 -----------
@@ -72,7 +70,7 @@ spell a missing gender ``\N`` in one row and ``""`` in the other are unequal in
 Bronze and equal in Silver, so canonicalization **raises** the rate by removing
 the difference that kept them apart.
 
-A rise is therefore not a regression and a fall is not an improvement; both are
+A rise is therefore not a regression and a fall is not a gain; both are
 questions. The number stays in the result schema because it is a real
 observation that found real things — every change examined so far was the
 source's own duplicates becoming visible — but each one is settled by tracing
@@ -101,17 +99,11 @@ Kind = Literal["numeric", "date", "code", "text"]
 #: excluded: a string that is a string is not evidence of anything.
 TYPED_KINDS: frozenset[str] = frozenset({"numeric", "date", "code"})
 
-#: Metrics where a larger number is better, which decides the sign of Table 2's
-#: improvement column.
-HIGHER_IS_BETTER: frozenset[str] = frozenset(
-    {"type_consistency", "schema_conformance", "code_validity"}
-)
-
-#: The layer-to-layer comparison. Each one is stated as a role that both layers
-#: fill, so the two sides measure the same construct under different column
-#: names. ``code_validity`` belongs here whenever a reference code list exists;
-#: where none does it is simply ``None`` and drops out of the table.
-H1_COMPARABLE_METRICS: tuple[str, ...] = (
+#: The layer-to-layer integrity check. Each one is stated as a role that both
+#: layers fill, so the two sides measure the same construct under different
+#: column names. ``code_validity`` belongs here whenever a reference code list
+#: exists; where none does it is simply ``None``.
+INTEGRITY_METRICS: tuple[str, ...] = (
     "type_consistency",
     "missing_rate",
     "schema_conformance",
@@ -123,11 +115,11 @@ H1_COMPARABLE_METRICS: tuple[str, ...] = (
 #: docstring: it compares stored values rather than interpreted ones, so a
 #: delta here is something to explain rather than something that settles
 #: anything.
-H1_DIAGNOSTIC_METRICS: tuple[str, ...] = ("duplicate_rate",)
+DIAGNOSTIC_METRICS: tuple[str, ...] = ("duplicate_rate",)
 
-#: Everything a :class:`QualityReport` can answer for. The result schema keeps
-#: all of it — separating presentation from storage is the point.
-TABLE2_METRICS: tuple[str, ...] = H1_COMPARABLE_METRICS + H1_DIAGNOSTIC_METRICS
+#: Everything a :class:`QualityReport` can answer for. ``rq1_layer_quality``
+#: stores all of it — separating presentation from storage is the point.
+LAYER_QUALITY_METRICS: tuple[str, ...] = INTEGRITY_METRICS + DIAGNOSTIC_METRICS
 
 
 class QualityError(ValueError):
@@ -216,16 +208,8 @@ class QualityReport:
     code_validity: float | None = None
     missing_by_column: dict[str, float] = field(default_factory=dict)
 
-    def to_dict(self) -> dict[str, Any]:
-        """The result-schema fields this measurement fills in."""
-        return {
-            "missing_rate": self.missing_rate,
-            "duplicate_rate": self.duplicate_rate,
-            "schema_validity": self.schema_conformance,
-        }
-
     def metric(self, name: str) -> float | None:
-        if name not in TABLE2_METRICS:
+        if name not in LAYER_QUALITY_METRICS:
             raise QualityError(f"no such quality metric: {name!r}")
         value: float | None = getattr(self, name)
         return value
@@ -277,84 +261,6 @@ def duplicate_rate(frame: pd.DataFrame, key: tuple[str, ...] = ()) -> float:
         raise QualityError("cannot measure duplicates in an empty frame")
     subset = list(key) if key else None
     return float(frame.duplicated(subset=subset).mean())
-
-
-def table2(reports: Mapping[Layer, QualityReport], *, baseline: Layer = "bronze") -> pd.DataFrame:
-    """Table 2 (Data Quality): Metric / per-layer values / Improvement.
-
-    ``Improvement`` is signed so that **positive always means better**: for a
-    rate where lower is better it is ``baseline - layer``, and for one where
-    higher is better it is ``layer - baseline``. Without that convention a
-    column of mixed-direction deltas invites the reader to misread half of it.
-
-    The row counts are printed as the first row, so a missing rate improved by
-    dropping rows is visible in the same glance as the improvement.
-
-    Only :data:`H1_COMPARABLE_METRICS` appear here. ``duplicate_rate`` is
-    reported by :func:`table2_diagnostics`, which prints no improvement column
-    at all — a signed delta is exactly the reading that metric cannot support.
-    """
-    if baseline not in reports:
-        raise QualityError(f"no report for the baseline layer {baseline!r}")
-
-    layers = [baseline, *[layer for layer in reports if layer != baseline]]
-    rows: list[dict[str, Any]] = [
-        {"Metric": "rows"} | {str(layer): float(reports[layer].rows) for layer in layers}
-    ]
-    for name in H1_COMPARABLE_METRICS:
-        values: dict[str, Any] = {str(layer): reports[layer].metric(name) for layer in layers}
-        if all(value is None for value in values.values()):
-            continue
-        rows.append({"Metric": name} | values)
-
-    frame = pd.DataFrame(rows)
-    for layer in layers:
-        if layer == baseline:
-            continue
-        frame[f"{layer}_improvement"] = [
-            _improvement(row["Metric"], row[baseline], row[layer]) for _, row in frame.iterrows()
-        ]
-    return frame
-
-
-def table2_diagnostics(reports: Mapping[Layer, QualityReport]) -> pd.DataFrame:
-    """The diagnostic metrics, per layer, with no improvement column.
-
-    Separate from :func:`table2` because printing them side by side under one
-    heading is what invites "duplicates improved by X" — the one reading the
-    measurement does not support. The values are here in full; only the
-    invitation to subtract them is gone.
-    """
-    layers = list(reports)
-    rows = [
-        {"Metric": name} | {str(layer): reports[layer].metric(name) for layer in layers}
-        for name in H1_DIAGNOSTIC_METRICS
-    ]
-    return pd.DataFrame([row for row in rows if any(v is not None for v in list(row.values())[1:])])
-
-
-def figure3_data(
-    reports: Mapping[Layer, QualityReport],
-    *,
-    metrics: tuple[str, ...] = H1_COMPARABLE_METRICS,
-) -> pd.DataFrame:
-    """Tidy ``(metric, layer, value)`` rows for Figure 3 (Quality Improvement).
-
-    Long rather than wide because every plotting library wants it that way, and
-    because a metric that a layer does not report is simply absent instead of
-    becoming a null that has to be explained.
-
-    Defaults to the comparable metrics. A figure puts bars next to each other
-    and the reader compares them, so a diagnostic metric plotted there makes a
-    claim the caller never wrote. Pass ``metrics`` to plot one deliberately.
-    """
-    rows = [
-        {"metric": name, "layer": layer, "value": value}
-        for layer, report in reports.items()
-        for name in metrics
-        if (value := report.metric(name)) is not None
-    ]
-    return pd.DataFrame(rows, columns=["metric", "layer", "value"])
 
 
 # -- internals -------------------------------------------------------------
@@ -509,10 +415,3 @@ def _holds(predicate: Callable[[Any], bool] | None, value: Any) -> bool:
         return bool(predicate(value))
     except Exception:
         return False
-
-
-def _improvement(metric: str, baseline: float | None, value: float | None) -> float | None:
-    """Signed so that positive always means better."""
-    if metric == "rows" or baseline is None or value is None:
-        return None
-    return value - baseline if metric in HIGHER_IS_BETTER else baseline - value

@@ -49,8 +49,8 @@ def main(argv: list[str] | None = None) -> int:
         shutil.rmtree(work_root / "runs" / args.run_id)
     work_root.mkdir(parents=True, exist_ok=True)
 
-    # 빌더의 SQLite store는 SQLITE_MAX_LENGTH(약 953 MiB)에서 막힌다 — T4 통합본
-    # 1,444 MiB가 빌드 시작 전에 걸렸다. _upload_store 참조.
+    # 빌더의 SQLite store는 SQLITE_MAX_LENGTH(약 953 MiB)에서 막힌다 — 따릉이 통합
+    # 스냅샷 1,444 MiB가 빌드 시작 전에 걸렸다. _upload_store 참조.
     repository = FileUploadRepository(work_root / "uploads")
     upload = repository.put(
         "paper-experiment",

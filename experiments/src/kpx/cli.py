@@ -6,13 +6,13 @@ import argparse
 import json
 import sys
 from collections.abc import Sequence
+from dataclasses import asdict
 from pathlib import Path
 
 from kpx import __version__
 from kpx.contract import CONDITIONS, LAYERS, Layer
 from kpx.datasets import DatasetNotBuilt, LayerStore, read_artifact, schema_report
-from kpx.metrics.runtime import MEASURED_RUNS, WARMUP_RUNS, describe_environment
-from kpx.provenance import ProvenanceError, ProvenanceStore
+from kpx.provenance import Environment, ProvenanceError, ProvenanceStore
 from kpx.results import default_store as default_result_store
 from kpx.snapshot import SnapshotError, SnapshotStore, default_store, scan_jsonl
 
@@ -54,7 +54,7 @@ def _layer_store(specifications: Sequence[str]) -> LayerStore:
 
 
 def _cmd_run(args: argparse.Namespace) -> int:
-    """한 조건을 측정하며 실행하고 결과를 저장소에 남긴다 (#13).
+    """한 조건을 실행하고 결과를 저장소에 남긴다 (#13).
 
     경로가 아니라 이름으로 부른다. 재현하려는 사람이 레포의 디렉터리 구조를 몰라도
     결과를 다시 만들 수 있어야 한다.
@@ -91,8 +91,6 @@ def _cmd_run(args: argparse.Namespace) -> int:
         snapshot_id=args.snapshot,
         pipeline_version=args.pipeline_version,
         seed=args.seed,
-        warmup=args.warmup,
-        repeat=args.repeat,
     )
     default_result_store(args.results).append(row)
     print(f"{row.run_id}  status={row.status}")
@@ -105,16 +103,18 @@ def _cmd_info(args: argparse.Namespace) -> int:
     print(f"layers:     {', '.join(LAYERS)}")
     print(f"snapshots:  {_store(args).root}")
     print(f"datasets:   {_builds(args).root}")
-    print(f"protocol:   {WARMUP_RUNS} warm-up + {MEASURED_RUNS} measured runs")
     return 0
 
 
 def _cmd_env(args: argparse.Namespace) -> int:
-    environment = describe_environment()
+    environment = Environment.capture()
     if args.json:
-        print(json.dumps(environment.to_json(), indent=2, sort_keys=True))
+        print(json.dumps(asdict(environment), indent=2, sort_keys=True))
     else:
-        print(environment.to_markdown())
+        versions = ", ".join(f"{name} {v}" for name, v in environment.packages.items())
+        print(f"- Platform: {environment.platform}")
+        print(f"- Python: {environment.python_version}")
+        print(f"- Libraries: {versions}")
     return 0
 
 
@@ -224,7 +224,7 @@ def build_parser() -> argparse.ArgumentParser:
 
     sub.add_parser("info", help="print harness configuration").set_defaults(func=_cmd_info)
 
-    env = sub.add_parser("env", help="print the measurement environment for Methodology")
+    env = sub.add_parser("env", help="print the environment for the Methodology section")
     env.add_argument("--json", action="store_true", help="emit JSON instead of the markdown block")
     env.set_defaults(func=_cmd_env)
 
@@ -235,8 +235,6 @@ def build_parser() -> argparse.ArgumentParser:
     run.add_argument("--seed", type=int, default=0)
     run.add_argument("--snapshot", default=None, help="the frozen source the layers came from")
     run.add_argument("--pipeline-version", default=None)
-    run.add_argument("--warmup", type=int, default=WARMUP_RUNS)
-    run.add_argument("--repeat", type=int, default=MEASURED_RUNS)
     run.add_argument("--results", type=Path, default=None)
     run.add_argument(
         "--layer",

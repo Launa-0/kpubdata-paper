@@ -1,6 +1,6 @@
 """Build provenance: which recipe produced which artifact.
 
-RQ4 needs a precise version of a loose claim. "Deterministic build" is made
+R1 needs a precise version of a loose claim. "Deterministic build" is made
 testable here by separating two things that are easy to conflate:
 
 * the **recipe** — snapshot, pipeline version, transformation config, upstream
@@ -57,8 +57,6 @@ TRACKED_PACKAGES = (
     "pandas",
     "pyarrow",
     "numpy",
-    "scikit-learn",
-    "scipy",
     "kpubdata-builder",
     "kpubdata",
 )
@@ -153,11 +151,11 @@ class Provenance:
     """A completed build: its recipe, its result, and where it ran.
 
     This record, not ``experiment_results.parquet``, is where builds are
-    counted. R1 (same snapshot rebuilt) and R2 (pipeline held constant across
-    snapshots) both measure builds, and everything they measure is already a
-    field here: ``status`` for build success rate, ``output_checksum`` for
-    SHA-256 equality, ``row_count`` for row loss, ``columns`` for schema
-    compatibility, ``output_size_bytes`` for storage amplification, and
+    counted. R1 (same snapshot rebuilt) and R2 (one contract across source
+    generations) both measure builds, and everything they measure is already a
+    field here: ``status`` for build success, ``output_checksum`` for SHA-256
+    equality, ``row_count`` for row loss, ``columns`` for schema,
+    ``output_size_bytes`` for the observed storage footprint, and
     :meth:`ProvenanceStore.lineage` to attribute a breakage to the layer that
     introduced it.
 
@@ -204,7 +202,7 @@ class Provenance:
             the rows in this layer. The result schema's ``rows`` is the rows in
             the *prepared analysis input*, which is smaller and differs by
             condition — filtering is part of what preparation costs. Passing the
-            layer's count would erase exactly the difference Table 4 reports.
+            layer's count would erase exactly that difference.
         ``output_checksum``
             the digest of these layer bytes, which is build determinism. The
             result schema's ``output_hash`` is the digest of the analytical

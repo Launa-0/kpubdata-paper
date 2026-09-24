@@ -1,13 +1,12 @@
-"""소스의 정형화 수준에 따라 RQ1 효과가 달라지는가 (#23 표 2).
+"""RQ1 — 계약 기반 표준화가 원천 표현을 무엇으로 바꾸는가.
 
-같은 잣대를 네 데이터셋에 적용한다. 계층화가 품질을 얼마나 개선하는지는 데이터마다
-다를 것이고, 그 차이가 원천의 표현 방식으로 설명되는지가 이 표가 묻는 것이다.
+세 데이터셋(매매·전월세·따릉이)에 같은 잣대를 적용한다. primary는 role × 전이 원인
+셀 수(``rq1_role_transition``)이고, 층별 비교 지표는 integrity check다.
 
 ## 측정 대상 컬럼을 사람이 고르지 않는다
 
-이전 판은 데이터셋마다 컬럼 다섯 개를 손으로 골랐다. 그러면 표가 데이터가 아니라
-**고른 사람**을 재게 된다 — 쉼표 낀 금액 컬럼을 넣으면 Bronze 적합률이 0이 되고,
-빼면 0.94가 된다. 같은 데이터에서 둘 다 나온다.
+컬럼을 손으로 고르면 표가 데이터가 아니라 **고른 사람**을 재게 된다 — 쉼표 낀
+금액 컬럼을 넣느냐 빼느냐로 Bronze 적합률이 크게 달라진다.
 
 그래서 컬럼은 **각 데이터셋의 Silver 계약에서 자동으로 유도한다.**
 
@@ -15,8 +14,7 @@
 - ``casts``가 선언된 필드는 **그 캐스팅이 기대 타입**이다 (``int``/``float``/
   ``int_comma``/``float_comma`` → numeric, ``date``/``datetime`` → date).
 - 어느 쪽에서도 얻을 수 없는 role은 빼지 않고 **멈춘다**. 조용히 빠지면 두 계층의
-  분모가 달라지고 표는 그대로 찍힌다 — 실제로 그렇게 따릉이를 required 2개 대
-  3개로 재고 있었다.
+  분모가 달라지고 표는 그대로 찍힌다.
 
 계약이 타입을 선언하지 않은 컬럼은 ``text``다. ``code``로 두지 않는 이유가 있다 —
 ``code``는 ``valid_codes`` 없이는 "문자열이 문자열로 읽히는가"만 보므로 **무조건
@@ -45,7 +43,7 @@ aggregate change rate는 어떤 컬럼을 role로 세느냐(예: ``read_as``만 
 ``per-column``
     어느 컬럼이 그 숫자를 만들었는지. 진단용이다.
 ``column-macro``
-    컬럼별 값의 단순 평균. **diagnostic이며 H1 primary로 쓰지 않는다** — 컬럼 수와
+    컬럼별 값의 단순 평균. **diagnostic이며 RQ1 결과로 쓰지 않는다** — 컬럼 수와
     컬럼 구성이 데이터셋마다 달라서, 평균은 "컬럼 하나가 평균적으로 얼마나 깨끗한가"
     이지 "이 데이터셋이 얼마나 깨끗한가"가 아니다.
 
@@ -54,7 +52,7 @@ aggregate change rate는 어떤 컬럼을 role로 세느냐(예: ``read_as``만 
 계층을 하나 더 만드는 것이 아니다. **같은 Bronze artifact에 대한 두 개의 view**다.
 
 ``Bronze (semantic)``  계약이 선언한 캐스팅을 Bronze에도 준다. ``pd.to_numeric``
-                       으로 ``"120,000"``을 실패 처리하면 H1이 아니라 우리가
+                       으로 ``"120,000"``을 실패 처리하면 데이터가 아니라 우리가
                        Bronze에 얼마나 적대적이었는가를 재게 된다.
 ``Bronze (naive)``     계약의 파서를 주지 않는다. 값이 없어지는 것이 아니라
                        ``pd.to_numeric``/``pd.to_datetime``이라는 **기본 해석**이
@@ -95,9 +93,9 @@ from _paths import DEFAULT_WORK_ROOT, SNAPSHOTS  # noqa: E402
 from kpx.datasets import read_artifact  # noqa: E402
 from kpx.metrics.pairing import aggregate, assert_row_identity, pair_and_classify  # noqa: E402
 from kpx.metrics.quality import (  # noqa: E402
-    H1_COMPARABLE_METRICS,
-    H1_DIAGNOSTIC_METRICS,
-    TABLE2_METRICS,
+    DIAGNOSTIC_METRICS,
+    INTEGRITY_METRICS,
+    LAYER_QUALITY_METRICS,
     ColumnSpec,
     QualityReport,
     QualitySpec,
@@ -153,7 +151,7 @@ def per_column(frame: pd.DataFrame, spec: QualitySpec) -> dict[str, QualityRepor
 def macro(reports: dict[str, QualityReport]) -> dict[str, float | None]:
     """컬럼별 값의 단순 평균 — diagnostic."""
     out: dict[str, float | None] = {}
-    for metric in TABLE2_METRICS:
+    for metric in LAYER_QUALITY_METRICS:
         values = [r.metric(metric) for r in reports.values()]
         kept = [v for v in values if v is not None]
         out[metric] = sum(kept) / len(kept) if kept else None
@@ -278,7 +276,7 @@ def main(argv: list[str] | None = None) -> int:
             "silver": measure_quality(silver_roles, semantic, layer="silver"),
         }
         bronze_naive = measure_quality(bronze_roles, naive, layer="bronze")
-        print("\n  -- row-level (H1 comparable) --")
+        print("\n  -- row-level (integrity check) --")
         print(
             pd.DataFrame(
                 [
@@ -288,7 +286,7 @@ def main(argv: list[str] | None = None) -> int:
                         "Silver": reports["silver"].metric(m),
                         "Bronze (naive)": bronze_naive.metric(m),
                     }
-                    for m in H1_COMPARABLE_METRICS
+                    for m in INTEGRITY_METRICS
                 ]
             ).to_string(index=False, na_rep="—")
         )
@@ -303,12 +301,12 @@ def main(argv: list[str] | None = None) -> int:
         # 진단 지표는 한 표 안에 섞지 않는다. 나란히 찍으면 두 열을 빼는 읽기를
         # 부르는데, duplicate_rate는 그 읽기를 지탱하지 못한다 — key 없이 전체 행으로
         # 센다.
-        print("\n  -- row-level (diagnostic, H1 증거로 쓰지 않는다) --")
+        print("\n  -- row-level (diagnostic, RQ1 증거로 쓰지 않는다) --")
         print(
             pd.DataFrame(
                 [
                     {"Metric": m, **{k: r.metric(m) for k, r in reports.items()}}
-                    for m in H1_DIAGNOSTIC_METRICS
+                    for m in DIAGNOSTIC_METRICS
                 ]
             ).to_string(index=False, na_rep="—")
         )
@@ -333,8 +331,8 @@ def main(argv: list[str] | None = None) -> int:
             ).to_string(index=False, na_rep="—")
         )
 
-        # 비교 지표가 평평한 자리에서 RQ1이 실제로 보여주는 것 — 표준화가 표현을
-        # 얼마나 바꿨고, 바꾸면서 뜻을 지켰는가.
+        # 비교 지표가 평평한 자리에서 RQ1이 실제로 보여주는 것 — 표준화가 바꾼 셀과
+        # 그 원인.
         # 짝짓기는 위치로 한다. 길이가 같다는 것은 같은 행이라는 뜻이 아니므로,
         # required role이 모든 행에서 같게 읽히는지 먼저 확인한다.
         assert_row_identity(bronze_roles, silver_roles, roles)
@@ -360,7 +358,7 @@ def main(argv: list[str] | None = None) -> int:
                     "roles": len(roles),
                     "required": sum(role.required for role in roles),
                     "rows": report.rows,
-                    **{metric: report.metric(metric) for metric in TABLE2_METRICS},
+                    **{metric: report.metric(metric) for metric in LAYER_QUALITY_METRICS},
                 }
             )
 
@@ -397,7 +395,7 @@ def main(argv: list[str] | None = None) -> int:
         )
 
         b_macro, s_macro = macro(b_cols), macro(s_cols)
-        print("\n  -- column-macro (diagnostic, H1 primary 아님) --")
+        print("\n  -- column-macro (diagnostic, RQ1 결과 아님) --")
         print(
             "     "
             + "  ".join(
@@ -407,14 +405,14 @@ def main(argv: list[str] | None = None) -> int:
             )
         )
 
-        # 요약도 H1_COMPARABLE_METRICS에서 만든다. 여기에 지표를 손으로 적어 두면
-        # 비교 지표를 고쳐도 최종 표에서 다시 깨진다 — 실제로 한 번 깨졌다.
+        # 요약도 INTEGRITY_METRICS에서 만든다. 여기에 지표를 손으로 적어 두면
+        # 비교 지표를 고쳐도 최종 표에서 다시 깨진다.
         row: dict[str, Any] = {
             "Dataset": dataset,
             "Roles": len(roles),
             "Required": sum(role.required for role in roles),
         }
-        for metric in H1_COMPARABLE_METRICS:
+        for metric in INTEGRITY_METRICS:
             before, after = reports["bronze"].metric(metric), reports["silver"].metric(metric)
             row[metric] = "—" if before is None or after is None else f"{before:.3f} -> {after:.3f}"
         summary.append(row)

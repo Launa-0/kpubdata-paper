@@ -1,13 +1,14 @@
 """The monolithic baseline convention, and the checks that enforce it.
 
-``monolithic`` is the control condition for RQ2 and RQ4. The claim it supports
-is that a *structured, reusable* pipeline costs less to analyse against than a
-*single-pass* transformation — not that Medallion cleans data better. Those are
-different claims, and only the first one is being made.
+``monolithic`` is the control condition for RQ2 (T1, T3). It is what a
+*structured, reusable* pipeline is compared against: a *single-pass*
+transformation with the same semantics. The comparison is about preparation code
+and cost, not about whether Medallion cleans data better — that claim is not
+made.
 
 That distinction is fragile in exactly one direction. A baseline written
 carelessly — or written after the Medallion path, by someone who already knows
-which way the result is supposed to come out — manufactures the finding. This is
+which way the result is supposed to come out — manufactures a finding. This is
 the **Baseline Bias** threat, and prose promising that it did not happen is worth
 very little. So the convention is enforced by two mechanical checks instead:
 
@@ -27,7 +28,7 @@ slightly *more* favourable than a realistic one-off script, because a real
 analyst writing a monolithic pipeline would not have a tested helper module to
 import. The alternative — inlining equivalent logic — would leave every
 difference in the numbers arguable. We take the conservative error: the baseline
-is handicapped in the direction that weakens our own hypothesis, and RQ2 is
+is handicapped in the direction that favours the baseline, and RQ2 is
 measured on the *structure* of the preparation code, which reuse does not
 flatter. `docs/monolithic-baseline.md` records the rationale in full.
 

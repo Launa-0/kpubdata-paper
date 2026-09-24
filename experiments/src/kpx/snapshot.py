@@ -10,8 +10,8 @@ The snapshot id embeds the digest::
 
 so two snapshots with the same id necessarily hold the same bytes. That is what
 lets R1 assert "identical source" instead of assuming it, and what lets R2 say
-which of T1/T2/T3 a build consumed. The date prefix keeps ids readable and
-sortable, which matters because R2 compares snapshots over time.
+which source generation a build consumed. The date prefix keeps ids readable and
+sortable.
 
 Layout::
 
@@ -53,7 +53,7 @@ class Snapshot:
 
     ``period`` is the ``(start, end)`` of the data's own time coverage, which is
     not the same as ``retrieved_at``: a pull made in March 2026 may cover
-    2020–2024. Table 1 needs both.
+    2020–2024. The dataset table needs both.
     """
 
     snapshot_id: str
@@ -79,8 +79,8 @@ class Snapshot:
     def column_count(self) -> int:
         return len(self.columns)
 
-    def table1_row(self) -> dict[str, Any]:
-        """The Table 1 (Dataset) row for this snapshot."""
+    def dataset_row(self) -> dict[str, Any]:
+        """The dataset-table row for this snapshot."""
         period = f"{self.period[0]}–{self.period[1]}" if self.period else "—"
         return {
             "Dataset": self.dataset,
@@ -150,7 +150,7 @@ def scan_jsonl(source: Path | str) -> SourceScan:
 
     Columns are the union over records, not the first record's keys: these APIs
     omit a field entirely when it has no value, so the first record understates
-    the schema and Table 1 would report a column count that is simply wrong.
+    the schema and the dataset table would report a column count that is simply wrong.
     """
     source = Path(source)
     files = sorted(source.rglob("*.jsonl"))
@@ -169,8 +169,8 @@ def scan_jsonl(source: Path | str) -> SourceScan:
     return SourceScan(row_count=rows, columns=tuple(sorted(columns)))
 
 
-def table1(snapshots: Sequence[Snapshot]) -> pd.DataFrame:
-    """Table 1 (Dataset): one row per snapshot, sizes in MiB.
+def dataset_table(snapshots: Sequence[Snapshot]) -> pd.DataFrame:
+    """The dataset table: one row per snapshot, sizes in MiB.
 
     Raw byte counts in a paper table are unreadable; the snapshot id keeps the
     exact bytes identifiable, so the size only has to give the order of
@@ -178,7 +178,7 @@ def table1(snapshots: Sequence[Snapshot]) -> pd.DataFrame:
     """
     rows = []
     for snapshot in snapshots:
-        row = snapshot.table1_row()
+        row = snapshot.dataset_row()
         row["Size"] = f"{row['Size'] / 1024 / 1024:.1f} MiB"
         rows.append(row)
     return pd.DataFrame(rows)

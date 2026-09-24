@@ -29,7 +29,6 @@ def make_row(**kwargs: Any) -> ResultRow:
         "source_snapshot": "seoul-apartment-trades/20260315-4f2a91c0d3b7",
         "pipeline_version": "0.1.0",
         "rows": 234_000,
-        "runtime_seconds": 1.25,
         "preprocessing_loc": 18,
         "function_count": 3,
         "transformation_steps": 4,
@@ -62,9 +61,9 @@ def test_empty_frame_carries_the_schema() -> None:
 
 
 def test_task_specific_metrics_are_optional() -> None:
-    """mae belongs to task02, join_matching_rate to task03."""
+    """join_matching_rate belongs to task03 only."""
     optional = {f.name for f in RESULT_SCHEMA if f.requirement == "optional"}
-    assert {"mae", "rmse", "join_matching_rate", "peak_memory_mb"} <= optional
+    assert optional == {"join_matching_rate"}
 
 
 # -- validation ------------------------------------------------------------
@@ -78,9 +77,9 @@ def test_a_complete_row_validates() -> None:
 
 def test_absent_optional_columns_are_added_as_missing() -> None:
     payload = make_row().to_dict()
-    del payload["mae"]
+    del payload["join_matching_rate"]
     frame = validate(pd.DataFrame([payload]))
-    assert frame["mae"].isna().all()
+    assert frame["join_matching_rate"].isna().all()
 
 
 def test_a_missing_identity_column_is_refused() -> None:
@@ -116,14 +115,14 @@ def test_an_unknown_status_is_refused() -> None:
 
 
 def test_a_rate_outside_the_unit_interval_is_refused() -> None:
-    frame = pd.DataFrame([make_row(missing_rate=1.4).to_dict()])
-    with pytest.raises(ResultSchemaError, match="missing_rate above"):
+    frame = pd.DataFrame([make_row(join_matching_rate=1.4).to_dict()])
+    with pytest.raises(ResultSchemaError, match="join_matching_rate above"):
         validate(frame)
 
 
-def test_a_negative_runtime_is_refused() -> None:
-    frame = pd.DataFrame([make_row(runtime_seconds=-0.1).to_dict()])
-    with pytest.raises(ResultSchemaError, match="runtime_seconds below"):
+def test_a_negative_count_is_refused() -> None:
+    frame = pd.DataFrame([make_row(preprocessing_loc=-1).to_dict()])
+    with pytest.raises(ResultSchemaError, match="preprocessing_loc below"):
         validate(frame)
 
 
@@ -168,7 +167,7 @@ def test_append_round_trips_through_parquet(tmp_path: Path) -> None:
     loaded = results.load()
     assert len(loaded) == 1
     assert loaded.loc[0, "run_id"] == "task01/silver/seed0/r0"
-    assert loaded.loc[0, "runtime_seconds"] == 1.25
+    assert loaded.loc[0, "preprocessing_loc"] == 18
     assert list(loaded.columns) == list(COLUMNS)
 
 
@@ -197,7 +196,7 @@ def test_a_rejected_row_leaves_the_file_untouched(tmp_path: Path) -> None:
     results = store(tmp_path)
     results.append(make_row(run_id="r1"))
     with pytest.raises(ResultSchemaError):
-        results.append(make_row(run_id="r2", missing_rate=9.0))
+        results.append(make_row(run_id="r2", join_matching_rate=9.0))
     assert list(results.load()["run_id"]) == ["r1"]
 
 
@@ -220,12 +219,12 @@ def populated(tmp_path: Path) -> ResultStore:
     results = store(tmp_path)
     results.extend(
         [
-            make_row(run_id="t1-bronze", task="task01", condition="bronze", runtime_seconds=4.0),
-            make_row(run_id="t1-silver", task="task01", condition="silver", runtime_seconds=2.0),
-            make_row(run_id="t1-gold", task="task01", condition="gold", runtime_seconds=1.0),
-            make_row(run_id="t1-mono", task="task01", condition="monolithic", runtime_seconds=5.0),
-            make_row(run_id="t2-silver", task="task02", condition="silver", runtime_seconds=3.0),
-            make_row(run_id="t2-failed", task="task02", condition="gold", status="failed"),
+            make_row(run_id="t1-bronze", task="task01", condition="bronze", preprocessing_loc=4),
+            make_row(run_id="t1-silver", task="task01", condition="silver", preprocessing_loc=2),
+            make_row(run_id="t1-gold", task="task01", condition="gold", preprocessing_loc=1),
+            make_row(run_id="t1-mono", task="task01", condition="monolithic", preprocessing_loc=5),
+            make_row(run_id="t3-silver", task="task03", condition="silver", preprocessing_loc=3),
+            make_row(run_id="t3-failed", task="task03", condition="gold", status="failed"),
         ]
     )
     return results
@@ -245,15 +244,15 @@ def test_query_filters_by_task_and_condition(tmp_path: Path) -> None:
 def test_query_hides_failed_runs_by_default(tmp_path: Path) -> None:
     """A failed run must not reach a table by accident."""
     results = populated(tmp_path)
-    assert "t2-failed" not in set(results.query(task="task02")["run_id"])
-    assert "t2-failed" in set(results.query(task="task02", status=None)["run_id"])
+    assert "t3-failed" not in set(results.query(task="task03")["run_id"])
+    assert "t3-failed" in set(results.query(task="task03", status=None)["run_id"])
 
 
 def test_by_condition_lays_out_the_table_the_paper_prints(tmp_path: Path) -> None:
-    table = populated(tmp_path).by_condition("runtime_seconds")
+    table = populated(tmp_path).by_condition("preprocessing_loc")
     assert list(table.columns) == ["bronze", "silver", "gold", "monolithic"]
     assert table.loc["task01", "gold"] == 1.0
-    assert table.loc["task02", "silver"] == 3.0
+    assert table.loc["task03", "silver"] == 3.0
 
 
 def test_by_condition_averages_repeated_runs(tmp_path: Path) -> None:
@@ -261,15 +260,15 @@ def test_by_condition_averages_repeated_runs(tmp_path: Path) -> None:
     results = store(tmp_path)
     results.extend(
         [
-            make_row(run_id="s0", seed=0, runtime_seconds=1.0),
-            make_row(run_id="s1", seed=1, runtime_seconds=3.0),
+            make_row(run_id="s0", seed=0, preprocessing_loc=1),
+            make_row(run_id="s1", seed=1, preprocessing_loc=3),
         ]
     )
-    assert results.by_condition("runtime_seconds").loc["task01", "silver"] == 2.0
+    assert results.by_condition("preprocessing_loc").loc["task01", "silver"] == 2.0
 
 
 def test_by_condition_on_an_empty_store_is_empty(tmp_path: Path) -> None:
-    assert store(tmp_path).by_condition("runtime_seconds").empty
+    assert store(tmp_path).by_condition("preprocessing_loc").empty
 
 
 def test_by_condition_refuses_a_metric_the_schema_does_not_have(tmp_path: Path) -> None:

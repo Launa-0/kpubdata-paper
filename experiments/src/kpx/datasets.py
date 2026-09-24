@@ -22,7 +22,7 @@ def read_artifact(path: Path) -> pd.DataFrame:
     """계층 산출물을 저장 형식에 맞게 읽는다.
 
     Bronze JSONL은 값을 문자열 그대로 둔다 — pandas가 알아서 숫자·날짜로 바꿔 주면
-    Bronze 조건이 치러야 할 파싱 비용을 로더가 대신 치른 셈이 된다.
+    Bronze 조건의 준비 코드가 해야 할 파싱을 로더가 대신 한 셈이 된다.
     """
     if path.suffix == ".jsonl":
         return pd.read_json(path, lines=True, dtype=False, convert_dates=False)
@@ -33,9 +33,11 @@ def read_artifact(path: Path) -> pd.DataFrame:
 class LayerStore:
     """``(dataset, layer) -> 파일`` 을 해석하는 resolver.
 
-    Bronze는 원천 표현을 그대로 보존한 JSONL이고, Silver/Gold는 parquet이다.
-    Bronze를 parquet으로 미리 바꿔 두면 그 변환 자체가 조건이 치러야 할 비용을
-    대신 치르는 셈이 되므로, 저장 형식도 계층의 일부로 둔다.
+    과제 실행(T1/T3 네 조건)에서 Bronze는 원천 표현을 그대로 보존한 JSONL이고,
+    Silver/Gold는 parquet이다. Bronze를 parquet으로 미리 바꿔 두면 그 변환이 조건의
+    준비 코드가 할 일을 대신 하는 셈이 되므로, 저장 형식도 계층의 일부로 둔다.
+    실행 시간은 여기서 재지 않는다 — timing은 두 전략이 같은 Bronze Parquet을 읽도록
+    ``scripts/_timing.py``가 따로 잰다.
     """
 
     paths: dict[tuple[str, Layer], Path]
@@ -55,10 +57,6 @@ class LayerStore:
     def path(self, dataset: str, layer: Layer) -> str:
         """``DatasetResolver`` 계약이 요구하는 문자열 경로."""
         return str(self.path_for(dataset, layer))
-
-    def size_bytes(self, dataset: str, layer: Layer) -> int:
-        """저장 증폭(#19)을 재기 위한 계층별 크기."""
-        return self.path_for(dataset, layer).stat().st_size
 
 
 def schema_report(frame: pd.DataFrame) -> pd.DataFrame:

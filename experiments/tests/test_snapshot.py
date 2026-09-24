@@ -9,8 +9,8 @@ from kpx.snapshot import (
     Snapshot,
     SnapshotError,
     SnapshotStore,
+    dataset_table,
     scan_jsonl,
-    table1,
 )
 
 RETRIEVED = datetime(2026, 3, 15, 9, 30)
@@ -134,15 +134,17 @@ def test_re_registering_identical_bytes_is_idempotent(store: SnapshotStore, sour
     assert register(store, source) == first
 
 
-def test_table1_row_carries_every_column_table1_needs(store: SnapshotStore, source: Path) -> None:
-    row = register(store, source).table1_row()
+def test_dataset_row_carries_every_column_the_table_needs(
+    store: SnapshotStore, source: Path
+) -> None:
+    row = register(store, source).dataset_row()
     assert set(row) == {"Dataset", "Rows", "Columns", "Period", "Size", "Snapshot"}
     assert row["Period"] == "2020-01–2024-12"
     assert row["Columns"] == 4
 
 
 def test_period_is_optional(store: SnapshotStore, source: Path) -> None:
-    assert register(store, source, period=None).table1_row()["Period"] == "—"
+    assert register(store, source, period=None).dataset_row()["Period"] == "—"
 
 
 def test_citation_matches_the_block_quoted_in_the_paper(store: SnapshotStore, source: Path) -> None:
@@ -233,7 +235,7 @@ class TestTable1:
     ) -> None:
         register(store, source)
 
-        frame = table1(store.list_snapshots())
+        frame = dataset_table(store.list_snapshots())
 
         assert list(frame.columns) == ["Dataset", "Rows", "Columns", "Period", "Size", "Snapshot"]
         assert frame.loc[0, "Rows"] == 234_512
@@ -243,4 +245,4 @@ class TestTable1:
     ) -> None:
         register(store, source)
 
-        assert table1(store.list_snapshots()).loc[0, "Size"].endswith("MiB")
+        assert dataset_table(store.list_snapshots()).loc[0, "Size"].endswith("MiB")

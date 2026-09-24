@@ -1,8 +1,9 @@
 """kpx — experiment harness for the Medallion pipeline evaluation.
 
 ``kpx`` ("KPubData eXperiments") holds every piece of code that produces a number
-in the paper: the condition-runner contract, the measurement modules, the four
-downstream tasks, and the reproducibility experiments.
+in the paper: the condition-runner contract, the measurement modules, the two
+downstream tasks (T1, T3), RQ1's representation measurement, and the
+reproducibility and source-evolution experiments.
 
 The package deliberately contains **no** transformation logic of its own. Bronze,
 Silver and Gold artifacts are produced by ``kpubdata-builder``; ``kpx`` only

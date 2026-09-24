@@ -15,10 +15,10 @@ One identifier, which moves if either half moves, quoted in the paper and stored
 in every result row. The component versions are kept beside it, because a reader
 debugging a mismatch needs to know *which* half moved.
 
-R2 needs the same record for the opposite reason: it deliberately varies the
-source across T1/T2/T3 and concludes the pipeline is stable under that
-variation. The conclusion only follows if the pipeline itself did not move, so
-:func:`assert_same_pipeline` checks it rather than assuming it.
+R2 needs the same record for the opposite reason: it applies one fixed contract
+across the bike source generations (G1/G2/I1/G3 accepted, G4 fail-closed). The
+result only says something about the contract if the pipeline itself did not
+move, so :func:`assert_same_pipeline` checks it rather than assuming it.
 
 What the builder records today
 ------------------------------
@@ -75,7 +75,7 @@ UNKNOWN = "unknown"
 #: What is named here changes no bytes. ``upload_id`` is a new row in the upload
 #: store on every run; ``description`` is the sentence the calling script passed;
 #: ``output_path`` is where the parquet lands, not what is in it. Hashing those
-#: would make R1's repeated builds and R2's T1/T2/T3 look like different
+#: would make R1's repeated builds and R2's generations look like different
 #: pipelines, which is the opposite failure.
 RUN_SCOPED_KEYS = frozenset(
     {
@@ -248,9 +248,9 @@ class PipelineVersion:
 def assert_same_pipeline(builds: Iterable[Provenance]) -> str:
     """Return the pipeline version shared by ``builds``, or raise.
 
-    R2's precondition. It varies the source across T1/T2/T3 and concludes the
-    pipeline is stable under that variation; comparing builds made by different
-    pipeline versions would attribute a pipeline change to the source.
+    R2's precondition. It applies one contract across source generations;
+    comparing builds made by different pipeline versions would attribute a
+    pipeline change to the source.
     """
     versions = {build.inputs.pipeline_version for build in builds}
     if not versions:

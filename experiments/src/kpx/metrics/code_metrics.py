@@ -1,19 +1,19 @@
-"""Code metrics for RQ2/H2: what a condition costs to prepare data with.
+"""Preparation code volume for RQ2: how much code a condition needs before analysis.
 
-H2 predicts Bronze > Silver > Gold in preparation cost. The obvious way to
-measure that — count the lines of the script — is also the easiest way to get a
-result that means nothing, for two reasons:
+This is a property of the program, not of the people who write it. The obvious
+way to measure it — count the lines of the script — is also the easiest way to
+get a result that means nothing, for two reasons:
 
 * **The boundary moves.** If "preparation" is decided after the numbers are in,
   ``preprocessing_loc`` measures the author's sense of what should count.
-* **LOC alone is not effort.** Four lines of dense pandas are not cheaper than
-  eight readable ones.
+* **LOC alone is not code volume.** Four lines of dense pandas do not do less
+  than eight readable ones.
 
 The contract fixes the first: preparation is :meth:`ConditionRunner.prepare` and
 the private helpers it calls, so the boundary is a method boundary that was
 declared before any measurement (Construct Validity). This module fixes the
-second by reporting four numbers, not one — lines, functions, logical steps, and
-complexity as a secondary indicator.
+second by reporting lines **and** functions as the two primary numbers, with
+recorded transformation steps as a diagnostic.
 
 What is measured
 ----------------
@@ -39,7 +39,7 @@ The second rule is what makes the conditions comparable. Every condition draws
 on the same helper module, and the monolithic baseline is required to
 (``docs/monolithic-baseline.md``), so counting helper bodies would charge a
 condition for code it shares with every other condition. What differs between
-conditions — and what H2 is about — is how much a condition has to *do* with
+conditions — and what RQ2 measures — is how much a condition has to *do* with
 those helpers before the analysis can start.
 
 Counting rules for LOC
@@ -56,7 +56,7 @@ the rules hold exactly:
 
 These rules are applied identically to all four conditions. That is the point:
 an absolute LOC figure means little, but a ratio between conditions measured the
-same way is what H2 needs.
+same way is what RQ2 compares.
 """
 
 from __future__ import annotations
@@ -71,18 +71,16 @@ from types import ModuleType
 from typing import Any
 
 import pandas as pd
-from radon.complexity import cc_visit
 
 from kpx.contract import CONDITIONS, Condition
 
 PREPARE = "prepare"
 
-#: Columns of Table 3, in the order the paper prints them.
-TABLE3_METRICS: tuple[str, ...] = (
+#: The preparation code table's columns: two primary numbers, then the diagnostic.
+PREPARATION_CODE_METRICS: tuple[str, ...] = (
     "preprocessing_loc",
     "function_count",
     "transformation_steps",
-    "cyclomatic_complexity",
 )
 
 
@@ -92,7 +90,7 @@ class CodeMetricsError(RuntimeError):
 
 @dataclass(frozen=True)
 class CodeMetrics:
-    """What one condition's preparation costs.
+    """How much preparation code one condition has.
 
     ``transformation_steps`` is ``None`` until a run records it: steps are
     counted by :class:`~kpx.steps.StepRecorder` as the preparation executes,
@@ -102,7 +100,6 @@ class CodeMetrics:
 
     preprocessing_loc: int
     function_count: int
-    cyclomatic_complexity: int
     measured: tuple[str, ...] = ()
     transformations: tuple[str, ...] = ()
     transformation_steps: int | None = None
@@ -199,21 +196,20 @@ def measure_preparation(
     return CodeMetrics(
         preprocessing_loc=sum(effective_loc(segment) for segment in segments),
         function_count=len(helpers) + len(transformations),
-        cyclomatic_complexity=sum(_complexity(segment) for segment in segments),
         measured=(PREPARE, *helpers),
         transformations=tuple(sorted(transformations)),
         transformation_steps=steps,
     )
 
 
-def table3(metrics: Mapping[tuple[str, Condition], CodeMetrics]) -> pd.DataFrame:
-    """Table 3 (Analytical Effort), keyed by ``(task, condition)``.
+def preparation_code_table(metrics: Mapping[tuple[str, Condition], CodeMetrics]) -> pd.DataFrame:
+    """Preparation code volume per ``(task, condition)``.
 
     Conditions appear in Medallion order so that ``monolithic`` reads as the
     baseline rather than sorting between gold and silver.
     """
     if not metrics:
-        return pd.DataFrame(columns=["task", "condition", *TABLE3_METRICS])
+        return pd.DataFrame(columns=["task", "condition", *PREPARATION_CODE_METRICS])
 
     rows = [
         {
@@ -222,7 +218,6 @@ def table3(metrics: Mapping[tuple[str, Condition], CodeMetrics]) -> pd.DataFrame
             "preprocessing_loc": measurement.preprocessing_loc,
             "function_count": measurement.function_count,
             "transformation_steps": measurement.transformation_steps,
-            "cyclomatic_complexity": measurement.cyclomatic_complexity,
         }
         for (task, condition), measurement in metrics.items()
     ]
@@ -314,7 +309,3 @@ def _segment(source: str, node: ast.AST) -> str:
     if segment is None:
         raise CodeMetricsError("could not recover the source of a measured function")
     return segment
-
-
-def _complexity(source: str) -> int:
-    return sum(block.complexity for block in cc_visit(source))
