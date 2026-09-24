@@ -10,8 +10,8 @@
 
 | 스크립트 | 환경 |
 |---|---|
-| `build_silver.py`, `r1_rebuild.py`, `r2_build.py` | **builder** |
-| `record_builds.py`, `run_task01.py`, `r1_report.py`, `r2_report.py` | **harness** |
+| `build_silver.py`, `r1_rebuild.py`, `r2_build.py`, `time_polars.py` | **builder** |
+| `record_builds.py`, `run_task01.py`, `r1_report.py`, `r2_report.py`, `time_pandas.py`, `timing_report.py` | **harness** |
 
 아래에서 `$BUILDER`는 builder 가상환경의 python, `$KPX`는 harness 가상환경의
 python이다.
@@ -118,6 +118,23 @@ BuildSpec**으로 빌드한다. hash 일치를 기대하지 않는다 — 소스
 
 `r2_report.py`는 Monolithic 대조까지 돌린다(몇 분). Medallion 판정만 보려면
 `--skip-monolithic`.
+
+## 6. Timing — materialized vs monolithic
+
+```
+$BUILDER scripts/time_polars.py land       # 원천 JSONL -> 공용 Bronze Parquet
+$KPX     scripts/time_pandas.py
+$BUILDER scripts/time_polars.py measure
+$KPX     scripts/timing_report.py
+```
+
+측정은 **커밋한 뒤에** 돌린다. 두 러너는 논문·빌더 레포의 추적 파일이 커밋과 다르면
+멈춘다 — 숫자가 어느 코드에서 나왔는지 다시 애매해지지 않게 하기 위해서다. 원자료는
+`results/timing_raw_{pandas,polars}.parquet`, 요약은 그것에서만 만든
+`results/timing_summary.csv`다. 무엇을 어떤 순서로 재는지는 `_timing.py`에 있다.
+
+동작만 확인하려면 두 러너에 `--pilot --repeats 1`을 주고 `timing_report.py --pilot`으로
+본다. 결과는 `.build/timing/`에만 남는다.
 
 ## Silver 계약은 한 곳에 있다
 
