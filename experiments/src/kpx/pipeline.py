@@ -582,6 +582,7 @@ def bind_measured_artifact(
     *,
     spec: Mapping[str, Any],
     store: ProvenanceStore,
+    builder_version: str,
     layer: Layer = "silver",
 ) -> Provenance:
     """The recorded build that these bytes are, or an error naming the mismatch.
@@ -596,6 +597,11 @@ def bind_measured_artifact(
     drift apart — the snapshot it claims to come from, the recipe that claims to
     have produced it, and the bytes themselves. A measurement that cannot name
     the build it read is not reproducible, whatever it prints.
+
+    The builder is the fourth axis. Two builder commits can write byte-identical
+    output — the ``date_parts`` fix did — so the checksum cannot say which one
+    produced the bytes. ``builder_version`` is what the run directory records
+    about its builder (``builder_identity.json``); the record must name the same.
     """
     from kpx.digest import digest_tree
     from kpx.provenance import PROVENANCE_FILENAME, ProvenanceError
@@ -612,6 +618,15 @@ def bind_measured_artifact(
         for build in store.list_builds(dataset, layer)
         if build.inputs.snapshot_id == snapshot_id and build.inputs.config_hash == expected
     ]
+    version = PipelineVersion(builder_version=builder_version, config_hash=expected).identifier
+    built_by_it = [build for build in candidates if build.inputs.pipeline_version == version]
+    if candidates and not built_by_it:
+        raise ProvenanceError(
+            f"no recorded {layer} build of {dataset} by builder {builder_version}; recorded "
+            f"builders: {sorted({build.inputs.pipeline_version for build in candidates})}. "
+            "Register the build this run directory holds before measuring it."
+        )
+    candidates = built_by_it
     if not candidates:
         recorded = {
             (build.inputs.snapshot_id, build.inputs.config_hash[:CONFIG_HASH_PREFIX])

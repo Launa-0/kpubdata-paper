@@ -14,22 +14,30 @@ Figure 3에 넣거나, 아파트 R2의 33%를 인용하는 식으로. **이슈�
 
 **원칙: 설계를 바꾸는 코드 변경은 이 문서 갱신과 같은 커밋에 넣는다.**
 
-## 현재 최종 설계
+## 현재 작업 설계 — protocol freeze 전
+
+**아직 동결하지 않았다.** 아래는 지금까지의 결정이고, 최종 timing 프로토콜과
+`results/` 재생성은 동결 뒤에 한다.
 
 | 축 | 실험 |
 |---|---|
-| Data quality / standardization | 3개 데이터셋 Bronze -> Silver |
-| Analytical preparation | T1 단일 데이터셋 집계·추세 |
-| Cross-dataset interoperability | T3 trades + rent join |
-| Temporal analysis | T4 따릉이 시계열 (deterministic, 모델 없음) |
+| Data standardization (RQ1) | 3개 데이터셋 Bronze -> Silver. **role별 전이 범주·원인 표가 primary**, aggregate change rate는 진단 |
+| Analytical preparation (RQ2) | T1 단일 데이터셋 집계·추세 |
+| Cross-dataset interoperability (RQ2) | T3 trades + rent join, 네 조건 |
+| Recomputation / timing (RQ2) | T1·T3, 같은 엔진·포맷 통제, S1–S4 분리, raw 반복 저장, 조건 interleave — **재측정 예정** |
 | Frozen-source determinism | R1 |
 | Source evolution | 따릉이 G1 / G2 / I1 / G3 / G4 |
-| Storage trade-off | observed on-disk footprint |
-| External validation | T1 / T3 공개 통계 대조 |
+| Contract boundary | 통제된 perturbation (선언 부족 / 표현력 한계 / 구현 결함으로 분류) |
+| Storage trade-off | observed on-disk footprint + same-format controlled 비교 (반영 범위 검토 중) |
+| External validation | T3 공개 통계 대조는 **미실행**. 모집단·정의가 달라 primary에서 제외, 보조 방향 비교로 쓸지 미정 |
+
+따릉이는 RQ1(전이)과 원천 진화·계약 경계 실험의 핵심 데이터셋으로 남는다. 별도
+downstream task인 T4는 두지 않는다 (아래 Task scope 갱신).
 
 RQ2는 preparation code volume·complexity와 execution cost를 본다 (`analytical
-effort`가 아니다 — #54). RQ3는 correctness 우열이 아니라 analytical consistency /
-semantic preservation을 본다.
+effort`가 아니다 — #54). RQ3는 correctness 우열이 아니라 analytical consistency를
+보며, 조건 간 일치를 **독립 검증**(Bronze ↔ Silver: harness 파서 vs builder cast)과
+**구성상 동등**(Silver ↔ Gold, Bronze ↔ Monolithic: 같은 함수·helper)으로 나눠 적는다.
 
 ## 개정 목록
 
@@ -45,7 +53,11 @@ semantic preservation을 본다.
 | Storage | storage amplification | Bronze JSONL vs Silver/Gold Parquet — layering이 아니라 codec을 잰다 | observed on-disk footprint | 수치 유지, 해석 축소 |
 | Task scope | T1–T4 모두 full task | T2/T4 prediction 미구현 + 방법론 면적이 큼 | T1 / T3 + 축소 T4, T2는 future work | scope 변경 |
 | Provenance | 이름 규칙·glob으로 artifact 해결 | 폐기 artifact를 조용히 측정할 수 있었음 | snapshot / config_hash / checksum binding | RQ1 재측정 |
-
+| RQ1 headline | aggregate `representation_change_rate` | 계약의 `read_as` 컬럼을 role에 넣느냐에 따라 trades 0.238 ↔ 0.450, rent 0.225 ↔ 0.413 — 원천의 성질이 아니라 role 정의의 함수 | role별 전이 범주·원인 표를 primary로, aggregate는 진단. coverage/preservation은 integrity check | 수치 불변, 표시 변경 |
+| RQ1 측정 파서 | builder와 같다고 가정 | builder 실제 함수와 대조하니 null token·zfill 앞 공백 제거, 전각 숫자, `factorize`의 `1`/`1.0`/`True` 병합이 달랐다 | builder 동작에 맞춤 | 서울 3종 해당 값 0 — **결과 불변** |
+| RQ2 runtime (번복) | 기술통계만, 재실행 불필요 | JSONL vs Parquet, pandas vs polars, builder 부기 비용이 섞여 S1 이득과 S3/S4 손해가 **양방향으로 과장** | 같은 엔진·포맷 통제, raw 반복 저장, interleave로 **재측정** | 기존 timing 수치 폐기 예정 |
+| Provenance (확장) | snapshot / config / checksum binding. T1 러너는 "마지막으로 기록된 Silver"를 읽음 | 수정 전후 builder(`5d86eed`, `096d023`)의 Silver가 byte 단위로 같아 checksum으로 builder를 구분할 수 없다. "마지막 기록"은 다른 스냅샷·빌더의 빌드가 나중에 기록되면 틀린 빌드를 집는다 | 실행 디렉터리의 `builder_identity.json`까지 binding (`bind_measured_artifact(builder_version=…)`), T1도 같은 binding 사용 | 결과 불변 (기존 세 빌드를 그대로 다시 찾음) |
+| Task scope (번복) | 축소 T4 유지 | T1이 이미 키 기반 lag·순위를 하고, T4의 준비 단계는 R2·RQ1이 이미 잰 것 — 새 construct가 없다 | T4 제외, 따릉이는 RQ1·원천 진화·계약 경계에 유지 | scope 변경 |
 ## RQ1 — 측정이 만든 효과였다
 
 원래 표 2는 이렇게 읽혔다.
@@ -75,9 +87,11 @@ seoul-apartment-trades     21         5   1.000 -> 1.000 0.000 -> 0.000     1.00
  seoul-bike-rent-month     11         3   1.000 -> 1.000 0.000 -> 0.000     1.000 -> 1.000       0.000 -> 0.000
 ```
 
-**숫자를 되돌리지 않고 주장을 고쳤다.** Silver가 없애는 것은 원천의 오류가 아니라
-반복되는 해석 비용이다 — 차이는 데이터가 아니라 해석 로직을 누가 갖느냐에 있다.
-옛 숫자는 `Bronze (naive)` view에 그대로 남아 준비 비용을 보여준다 (RQ2와 함께 읽는다).
+**숫자를 되돌리지 않고 주장을 고쳤다.** 차이는 데이터가 아니라 해석 로직을 어디에
+두느냐에 있다 — Silver는 그 해석을 upstream에 materialize한다. 그 비용 효과는 RQ2가
+따로 잰다. 옛 숫자는 `Bronze (naive)` view에 그대로 남는다. 이것은 계약의 해석을 받지
+않은 reader에 대한 sensitivity view이지, 데이터 품질 baseline이나 분석자 노력의
+측정이 아니다.
 
 자세한 실측은 `bike-generation-runs.md`의 RQ1 절에 있다.
 
@@ -90,6 +104,12 @@ naive/semantic 격차는 현재 **화면에만 찍히고 결과 artifact에 저�
 지금 필드만 더하면 곧 다시 뜯는다.
 
 ## RQ2 — runtime에 검정을 붙이지 않는다
+
+> **(번복)** 아래의 "interleave/randomize는 과하다, 재실행 불필요"는 폐기했다. 통제
+> pilot에서 기존 timing이 포맷·엔진·builder 부기 비용과 섞여 있음이 드러났다(S1 약
+> 420배 -> 같은 엔진 약 3–40배, S3/S4 medallion 7–8배 느림 -> 1.0–1.4배). 최종 timing은
+> 같은 엔진·포맷, raw 반복 저장, 조건 interleave로 다시 잰다. runtime에 p-value를 내지
+> 않는다는 결정은 유지한다.
 
 프로토콜은 warm-up 1 + 측정 5회지만 `runner.py`는 median 하나만
 `ResultRow.runtime_seconds`에 남긴다. `stats.py`는 `seed`로 pair하는데 T1/T3는
@@ -120,6 +140,16 @@ downstream analysis를 공유한다.
 External reference statistic도 "네 조건 중 누가 더 정확한가"가 아니라 **공통 결과가
 외부 공개 통계와 얼마나 일관되는가**라는 별도 validation으로 둔다. ground truth라
 부르지 않는다. 코드는 그대로 두고 질문과 문구만 고친다.
+
+> **(갱신)** T3 외부 참조 비교는 아직 한 번도 실행되지 않았다. 참조 통계는 표본 조사
+> 가격이고 T3는 매칭된 실거래 key의 ㎡당 평균이라 모집단·가중·정의가 다르며, 전세가율
+> 정의만 바꿔도 headline이 3.6%p 움직인다. primary validation에서 빼고, 추세 방향의
+> 보조 비교로 쓸지는 참조 정의를 확인한 뒤 정한다.
+>
+> 조건 간 일치의 무게도 나눠 적는다. Bronze ↔ Silver는 서로 다른 구현(harness 파서와
+> builder cast)이 같은 값에 도달한 **독립 검증**이다. Silver ↔ Gold는 같은 집계 함수로
+> 만든 materialization이고, Bronze ↔ Monolithic은 같은 helper를 같은 순서로 쓰므로
+> **구성상 기대되는 동등**이다.
 
 ## Task3 — 결측 월세는 전세가 아니다
 
@@ -177,7 +207,18 @@ footprint under the evaluated pipeline**으로 이름을 낮추고, Threats에 "
 순수 amplification이 필요하면 세 계층을 공통 포맷으로 변환해 보조 분석하면 되지만,
 이번 제출에서는 relabel + limitation으로 충분하다.
 
+> **(갱신)** 같은 포맷(ZSTD Parquet, 같은 row group·dictionary 설정)으로 통제한 pilot에서
+> Bronze/Silver 비는 0.92–0.99였고, 1 미만의 격차는 Silver의 파생 날짜 컬럼으로 전부
+> 설명된다(공유 필드만 비교하면 약 1.00). 관측 비율 22–30배는 거의 전부 codec이다. 이
+> 통제 결과를 본문에 넣을지는 검토 중이다.
+
 ## Task scope — T2는 빼고 T4는 줄여서 유지
+
+> **(번복) T4도 두지 않는다.** 아래 축소 T4를 dry-run으로 검토했다. 시간 변환(lag·순위)은
+> T1의 공유 분석이 이미 키 기반으로 하고, Bronze 쪽 준비(헤더 coalesce·연월 정규화·
+> 식별자 패딩)는 R2·RQ1·perturbation이 이미 잰 단계라 새 construct가 없다. 따릉이
+> 데이터는 빠지지 않는다 — RQ1 전이 범주, 원천 세대 진화, 계약 경계 실험의 핵심
+> 데이터셋으로 남는다. 아래 본문은 당시 결정의 기록으로 둔다.
 
 구현된 것은 `task01_price_analysis`와 `task03_join` 둘이다. `task02` / `task04`는
 이름과 계획만 있다. Epic의 4x4 matrix는 실제와 맞지 않는다.

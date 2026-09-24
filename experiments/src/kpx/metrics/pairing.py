@@ -26,10 +26,13 @@ What a change rate is not
 
 ``representation_change_rate`` is **not** analyst effort. One vectorised cast
 rewrites a million cells; a different million cells might cost one line each.
-The share of values that had to be normalised is a property of the source, and
-the cost of doing that normalisation downstream is RQ2's measurement, not this
-one. Reading a 70% change rate as "70% of the work" is the same category error
-as reading Bronze's naive parsing failures as data corruption.
+The share of values that had to be normalised is a descriptive footprint of this
+source *under the evaluated contract and role definition* — not a property of the
+source alone: counting the columns ``read_as`` converts as roles moves the trades
+aggregate from 0.238 to 0.450 on the same bytes. The cost of doing that
+normalisation downstream is RQ2's measurement, not this one. Reading a 70%
+change rate as "70% of the work" is the same category error as reading Bronze's
+naive parsing failures as data corruption.
 
 Coverage is reported, not assumed
 ---------------------------------

@@ -5,8 +5,10 @@ modules implementing :class:`kpx.contract.ConditionRunner`:
 
 ==========================  ==================================================
 ``task01_price_analysis``   Seoul apartment price aggregation and trend
-``task02_prediction``       Apartment price-per-m2 prediction
 ``task03_join``             Trade + rent integration, jeonse ratio
-``task04_bike``             Bike rental monthly time series
 ==========================  ==================================================
+
+T2 (price prediction) and T4 (bike time series) were planned and dropped; see
+``docs/experiment-design-revisions.md``. The bike data stays in the study for
+RQ1 and source evolution, not as a downstream task.
 """

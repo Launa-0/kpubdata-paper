@@ -286,3 +286,88 @@ class TestTransformationRecipe:
         contract = {**self.SPEC["contract"], "filters": ("deal_year >= 2020",)}
 
         assert self._hash(contract=contract) != self._hash()
+
+
+class TestBindMeasuredArtifact:
+    """측정한 바이트가 어느 기록된 빌드인지 — builder까지 묶는다."""
+
+    SPEC = {
+        "dataset_id": "seoul-apartment-trades",
+        "snapshot_id": "seoul-apartment-trades/20260922-6660c8e25162",
+        "run_id": "trades-silver-001",
+        "contract": {"rename": {"sggCd": "district_code"}},
+    }
+
+    def record(self, artifact: Path, store: object, builder: str) -> object:
+        from kpx.pipeline import PipelineVersion, transformation_recipe
+        from kpx.provenance import ProvenanceStore
+
+        assert isinstance(store, ProvenanceStore)
+        config = config_hash(transformation_recipe(self.SPEC))
+        provenance = record_build(
+            artifact,
+            inputs=BuildInputs(
+                dataset=str(self.SPEC["dataset_id"]),
+                layer="silver",
+                snapshot_id=str(self.SPEC["snapshot_id"]),
+                pipeline_version=PipelineVersion(builder, config).identifier,
+                config_hash=config,
+                upstream_build_id="0" * 16,
+            ),
+            row_count=1,
+            columns=["district_code"],
+        )
+        store.write(provenance)
+        return provenance
+
+    def test_the_build_of_the_named_builder_is_chosen_when_the_bytes_are_equal(
+        self, tmp_path: Path
+    ) -> None:
+        """수정 전후 builder가 byte 단위로 같은 Silver를 냈다. 체크섬만으로는 어느
+        builder의 빌드를 쟀는지 말할 수 없다 — 더 늦게 기록된 쪽을 집으면 틀린다."""
+        from kpx.pipeline import bind_measured_artifact
+        from kpx.provenance import ProvenanceStore
+
+        artifact = tmp_path / "silver"
+        artifact.mkdir()
+        (artifact / "table.parquet").write_bytes(b"same bytes")
+        store = ProvenanceStore(tmp_path / "datasets")
+        old = self.record(artifact, store, "0.4.0.dev0+5d86eedf3a1a")
+        self.record(artifact, store, "0.4.0.dev0+096d023f9546")
+
+        bound = bind_measured_artifact(
+            artifact, spec=self.SPEC, store=store, builder_version="0.4.0.dev0+5d86eedf3a1a"
+        )
+
+        assert bound == old
+
+    def test_a_builder_with_no_recorded_build_is_refused(self, tmp_path: Path) -> None:
+        from kpx.pipeline import bind_measured_artifact
+        from kpx.provenance import ProvenanceError, ProvenanceStore
+
+        artifact = tmp_path / "silver"
+        artifact.mkdir()
+        (artifact / "table.parquet").write_bytes(b"same bytes")
+        store = ProvenanceStore(tmp_path / "datasets")
+        self.record(artifact, store, "0.4.0.dev0+5d86eedf3a1a")
+
+        with pytest.raises(ProvenanceError, match="builder"):
+            bind_measured_artifact(
+                artifact, spec=self.SPEC, store=store, builder_version="0.4.0.dev0+ffffffffffff"
+            )
+
+    def test_bytes_that_no_record_names_are_refused(self, tmp_path: Path) -> None:
+        from kpx.pipeline import bind_measured_artifact
+        from kpx.provenance import ProvenanceError, ProvenanceStore
+
+        artifact = tmp_path / "silver"
+        artifact.mkdir()
+        (artifact / "table.parquet").write_bytes(b"recorded bytes")
+        store = ProvenanceStore(tmp_path / "datasets")
+        self.record(artifact, store, "0.4.0.dev0+5d86eedf3a1a")
+        (artifact / "table.parquet").write_bytes(b"stale bytes")
+
+        with pytest.raises(ProvenanceError, match="does not match"):
+            bind_measured_artifact(
+                artifact, spec=self.SPEC, store=store, builder_version="0.4.0.dev0+5d86eedf3a1a"
+            )

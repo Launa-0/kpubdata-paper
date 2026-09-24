@@ -22,7 +22,7 @@ experiments/
 │   ├── results.py        # result schema and store
 │   ├── stats.py          # paired comparison, effect size, CI
 │   ├── metrics/          # quality / code_metrics / runtime / reproducibility / storage
-│   └── tasks/            # task01_price_analysis … task04_bike
+│   └── tasks/            # task01_price_analysis, task03_join (T2/T4 dropped)
 ├── tests/
 ├── datasets/             # built dataset artifacts (bytes git-ignored, provenance committed)
 ├── snapshots/            # frozen source snapshots + metadata

@@ -391,11 +391,11 @@ seoul-bike-rent-month   build 7184f2ccba910a4f  0.4.0.dev0+5d86eedf3a1a+f9f6813c
 
 같은 artifact에 대한 두 개의 **측정 view**지 두 개의 condition이 아니다.
 
-- **Bronze (semantic)** — 계약이 선언한 cast를 그대로 적용해 읽는다. 빌드가 그
-  바이트를 읽은 방식이다. H1의 primary.
-- **Bronze (naive)** — 계약 파서 없이 pandas 기본 해석으로 읽는다. 준비 없이
-  들어온 분석자가 마주하는 것이다. 데이터 품질이 아니라 준비 비용이므로 RQ2와
-  같이 읽는다.
+- **Bronze (semantic)** — 계약이 선언한 cast와 null token을 그대로 적용해 읽는다.
+  빌드가 그 바이트를 읽은 방식이다.
+- **Bronze (naive)** — 계약 파서 없이 pandas 기본 해석으로 읽는다. 계약의 해석을
+  받지 않은 reader가 무엇을 보는지에 대한 **sensitivity view**다. 데이터 품질의
+  baseline도, 분석자의 준비 시간·노력의 측정도 아니다.
 
 측정 쪽 파서는 빌더에 맞춘다. polars `Int64(strict=False)`는 `"12.0"`도 `" 7 "`도
 버리고, 쉼표와 공백을 터는 것은 `int_comma`/`float_comma`뿐이다. 측정이 빌더보다
@@ -416,6 +416,11 @@ seoul-apartment-trades     21         5   1.000 -> 1.000 0.000 -> 0.000     1.00
 reader를 준 결과였다. **이것이 정직한 결과이므로 그대로 둔다. 고칠 것은 숫자가
 아니라 주장이다.**
 
+이 동률은 우연이 아니라 구조적이다. 빌더는 선언된 cast가 값을 null로 떨어뜨리면
+빌드를 세우므로(#188), 빌드가 성공했다는 것은 Bronze를 계약 파서로 읽어도 실패가
+없다는 뜻이다. 따라서 이 비교 지표는 성공한 빌드에서 차이를 낼 수 없다 — "Silver의
+품질 향상"은 이 지표로 검증도 반증도 되지 않는다.
+
 naive view에는 그 숫자가 그대로 남는다.
 
 ```
@@ -426,13 +431,14 @@ seoul-apartment-trades  parsing_failure_rate  Bronze(naive) 1.000     vs  Bronze
 ```
 
 그러므로 RQ1의 주장은 "Silver가 원천의 오류를 고쳤다"가 아니다. **차이는 데이터에
-있지 않고 해석 로직을 누가 갖고 있느냐에 있다** — Bronze에서는 분석자가, Silver에서는
-파이프라인이 갖는다. Silver가 없애는 것은 오류가 아니라 반복되는 해석 비용이다.
+있지 않고 해석 로직을 어디에 두느냐에 있다** — Bronze에서는 downstream이, Silver에서는
+파이프라인이 갖는다. Silver는 그 해석을 upstream에 materialize한다. 그것이 비용을
+얼마나 바꾸는지는 이 표가 아니라 RQ2가 따로 잰다.
 
-유일하게 남은 실질적 차이는 따릉이의 `type_consistency` 0.999571 -> 1.000이다.
-per-column을 보면 `carbon_kg`/`exercise_kcal`에서 Bronze parse fail 0.001072가
-Silver missing 0.001072로 그대로 넘어간다. 계약의 파서로도 읽히지 않는 값을
-Silver가 null로 확정한 것이다. 규모는 0.1%다.
+(갱신) 처음에는 따릉이 `type_consistency` 0.999571 -> 1.000이 유일한 실질 차이로
+보였다. 이것은 측정이 계약의 null token(`\N`)을 몰라 `carbon_kg`/`exercise_kcal`의
+결측 0.001072를 파싱 실패로 센 결과였다. null token을 반영한 뒤에는 Bronze(semantic)도
+1.000이고 두 컬럼의 결측은 양쪽 모두 0.001072다. 0.999571은 naive view에만 남는다.
 
 ### role로 비교한다
 
@@ -448,21 +454,23 @@ Silver가 null로 확정한 것이다. 규모는 0.1%다.
 
 ### gender 40.4%
 
-`gender`의 40.4%는 per-column 진단표에만 나타난다.
+`gender`의 40.4%는 per-column 진단표에만 나타난다. 계약의 null token(`\N`, `""`)을
+아는 reader로 읽으면 Bronze와 Silver가 같다.
 
 ```
-       Role    kind  bronze_missing  silver_missing
-     gender    text             0.0        0.404118
-  carbon_kg numeric             0.0        0.001072
+                    gender missing   carbon_kg missing
+Bronze (naive)            0.000             0.000
+Bronze (semantic)         0.404118          0.001072
+Silver                    0.404118          0.001072
 ```
 
-Bronze의 `gender_missing`이 0인 것이 핵심이다. 다만 이것을 "Bronze에 결측이
-없었다"로 읽으면 안 된다. `\N`과 `""`가 아직 결측으로 **해석되지 않았을** 뿐이다.
-Silver의 40.4%도 새 결측을 생성한 것이 아니라 원천 표현을 canonical null로
-해석한 결과다.
+(갱신) 이전 판은 Bronze 0.0 -> Silver 0.404를 적고 "Bronze의 0이 핵심"이라고 했다.
+그 0은 per-column 측정이 null token을 모르던 때의 값이고, 지금 정의로는 naive view의
+값이다. 결측은 Silver가 만든 것이 아니라 원천이 `\N`/`""`로 **이미 말하고 있던 것**이고,
+naive reader만 그것을 결측으로 읽지 못한다.
 
-그러므로 이 변화는 completeness가 나빠진 것이 아니라 **missingness의 observability가
-높아진 것**이다. 논문에서 이 둘을 섞어 쓰면 Silver가 데이터를 망친 것처럼 읽힌다.
+그러므로 논문에서 이 값을 "Silver에서 결측이 늘었다"로 쓰면 안 된다. 같은 계약으로
+읽으면 결측률은 계층 간에 같고, 차이는 reader가 계약의 결측 표기를 아느냐에만 있다.
 
 ### duplicate_rate는 비교 지표가 아니다
 

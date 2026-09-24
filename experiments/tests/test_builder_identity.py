@@ -7,6 +7,7 @@
 
 from __future__ import annotations
 
+import json
 import subprocess
 import sys
 from pathlib import Path
@@ -114,3 +115,19 @@ def test_write_read_roundtrip(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -
     assert bi.write(run_dir) == captured
     assert bi.read(run_dir) == captured
     assert bi.read(tmp_path / "runs" / "absent") is None
+
+
+def test_version_of_a_run_without_identity_stops(tmp_path: Path) -> None:
+    """빌더를 모르는 산출물은 측정하지 않는다 — 체크섬으로는 빌더를 가를 수 없다."""
+    with pytest.raises(SystemExit, match="builder_identity"):
+        bi.version_of(tmp_path)
+
+
+def test_version_of_matches_what_record_builds_writes(tmp_path: Path) -> None:
+    identity = {
+        "package_version": "0.4.0.dev0",
+        "git_commit": "096d023f9546abc",
+        "git_dirty": False,
+    }
+    (tmp_path / bi.FILENAME).write_text(json.dumps(identity), encoding="utf-8")
+    assert bi.version_of(tmp_path) == bi.as_version(identity) == "0.4.0.dev0+096d023f9546"
