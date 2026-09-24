@@ -177,10 +177,10 @@ def main(argv: list[str] | None = None) -> int:
     if args.fresh:
         # 측정 방법이 바뀐 뒤의 재실행이다. 이전 행과 섞이면 한 표 안에 서로 다른
         # 방법으로 잰 숫자가 공존하게 된다. 저장소는 같은 run_id의 재기록을
-        # 거부하므로, 지우는 것은 의도를 밝힌 경우에만 한다.
-        for path in (results.path, results.csv_path):
-            path.unlink(missing_ok=True)
-        print(f"이전 결과를 지우고 새로 기록한다: {results.path.name}")
+        # 거부하므로, 지우는 것은 의도를 밝힌 경우에만 한다. 이 과제의 행만 지운다 —
+        # 파일은 과제들이 함께 쓰므로 파일째 지우면 다른 과제의 결과가 사라진다.
+        results.drop_task(TASK.name)
+        print(f"{TASK.name}의 이전 결과를 지우고 새로 기록한다: {results.path.name}")
 
     # 스냅샷과 파이프라인 식별자는 손으로 넣지 않고 방금 읽은 빌드 기록에서 가져온다.
     # run_fields의 키는 결과 스키마의 이름이고, 러너 인자명은 다르다.

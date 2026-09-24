@@ -340,6 +340,17 @@ class ResultStore:
         self._write(combined)
         return combined
 
+    def drop_task(self, task: str) -> None:
+        """Remove one task's rows so a fresh run of it can be recorded.
+
+        Every task writes to the same file, so deleting the file to start over
+        would also delete the other tasks' results.
+        """
+        if not self.path.exists():
+            return
+        frame = self.load()
+        self._write(frame[frame["task"] != task].reset_index(drop=True))
+
     def _write(self, frame: pd.DataFrame) -> None:
         """Write both files, each replaced atomically.
 
