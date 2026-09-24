@@ -6,6 +6,8 @@
 
 - ``experimental_design`` — Source → Bronze → Silver → Gold → Analysis, monolithic 경로,
   S1–S4가 무효화하는 경계, equivalence gate의 위치.
+- ``experimental_design_compact`` — 같은 내용을 논문 한 단(약 3.4인치)에 맞춘 세로 배치.
+  부가 설명은 캡션과 본문이 맡는다.
 - ``timing_paired_ratio`` — task × engine 네 panel. 시나리오마다 같은 round 쌍 5개의
   ratio(monolithic ÷ materialized)와 그 median, 기준선 1. 쌍은 ``timing_raw_*``에서 다시
   짝짓고, median이 ``timing_comparison.csv``와 같은지 확인한 뒤 그린다.
@@ -205,6 +207,95 @@ def design_figure():  # type: ignore[no-untyped-def]
     return fig
 
 
+def design_figure_compact():  # type: ignore[no-untyped-def]
+    """``experimental_design``과 같은 내용을 논문 한 단(약 3.4인치)에 맞춘 세로 배치.
+
+    층은 위에서 아래로, S1–S4는 무효화된 층부터 Analysis까지의 막대로 둔다. 부가 설명은
+    캡션과 본문이 맡는다.
+    """
+    import matplotlib.pyplot as plt
+    from matplotlib.patches import FancyArrowPatch, FancyBboxPatch, Polygon
+
+    fig, ax = plt.subplots(figsize=(3.4, 3.3))
+    ax.set_xlim(0, 3.4)
+    ax.set_ylim(0, 3.3)
+    ax.axis("off")
+    fs = 7.5
+
+    def box(x: float, y: float, text: str, color: str, w: float, h: float = 0.36) -> None:
+        ax.add_patch(
+            FancyBboxPatch(
+                (x - w / 2, y - h / 2),
+                w,
+                h,
+                boxstyle="round,pad=0.01,rounding_size=0.05",
+                fc=color,
+                ec="0.25",
+                lw=0.8,
+            )
+        )
+        ax.text(x, y, text, ha="center", va="center", fontsize=fs)
+
+    def arrow(x0: float, y0: float, x1: float, y1: float) -> None:
+        ax.add_patch(
+            FancyArrowPatch(
+                (x0, y0), (x1, y1), arrowstyle="-|>", mutation_scale=7, lw=0.8, color="0.2"
+            )
+        )
+
+    cx, bw = 1.3, 1.25
+    layers = [
+        ("source", "Source snapshot", "#eeeeee", 2.95),
+        ("bronze", "Bronze (Parquet)", "#e9d8c4", 2.45),
+        ("silver", "Silver (contract)", "#d9d9e8", 1.95),
+        ("gold", "Gold (task aggregate)", "#f3e3a6", 1.45),
+        ("analysis", "Analysis (T1 / T3)", "#d5e8d4", 0.95),
+    ]
+    y = {key: yy for key, _, _, yy in layers}
+    for _, label, color, yy in layers:
+        box(cx, yy, label, color, bw)
+    for (_, _, _, y0), (_, _, _, y1) in zip(layers[:-1], layers[1:], strict=True):
+        arrow(cx, y0 - 0.18, cx, y1 + 0.18)
+    ax.text(cx, 3.22, "materialized", ha="center", fontsize=fs, style="italic")
+
+    # S1–S4: 무효화된 층부터 Analysis까지 materialized가 다시 계산하는 범위
+    for i, (label, start) in enumerate(
+        [("S1", "analysis"), ("S2", "gold"), ("S3", "silver"), ("S4", "bronze")]
+    ):
+        x = 0.6 - i * 0.16
+        ax.plot(
+            [x, x],
+            [y[start] + 0.14, y["analysis"] - 0.14],
+            color="#4a6fa5",
+            lw=2.2,
+            solid_capstyle="butt",
+        )
+        ax.text(
+            x, y[start] + 0.2, label, ha="center", va="bottom", fontsize=fs - 0.5, color="#4a6fa5"
+        )
+
+    mx = 2.85
+    box(mx, 1.7, "Monolithic\n(in memory)", "#f6f6f6", 1.05, 0.5)
+    ax.text(mx, 3.22, "monolithic", ha="center", fontsize=fs, style="italic")
+    arrow(cx + bw / 2, y["bronze"], mx, 1.95)
+
+    gx, gy = 1.95, 0.3
+    ax.add_patch(
+        Polygon(
+            [(gx, gy + 0.22), (gx + 0.55, gy), (gx, gy - 0.22), (gx - 0.55, gy)],
+            closed=True,
+            fc="#ffffff",
+            ec="#c0392b",
+            lw=1.0,
+        )
+    )
+    ax.text(gx, gy, "equivalence\ngate", ha="center", va="center", fontsize=fs - 1, color="#c0392b")
+    arrow(cx, y["analysis"] - 0.18, gx - 0.3, gy + 0.12)
+    arrow(mx, 1.45, gx + 0.3, gy + 0.12)
+    fig.tight_layout(pad=0.05)
+    return fig
+
+
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--out", type=Path, default=FIGURES)
@@ -219,6 +310,7 @@ def main(argv: list[str] | None = None) -> int:
 
     for name, fig in [
         ("experimental_design", design_figure()),
+        ("experimental_design_compact", design_figure_compact()),
         ("timing_paired_ratio", timing_figure(paired_ratios())),
     ]:
         fig.savefig(args.out / f"{name}.svg", metadata={"Date": None})
