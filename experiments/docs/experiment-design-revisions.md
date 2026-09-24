@@ -39,7 +39,7 @@ Figure 3에 넣거나, 아파트 R2의 33%를 인용하는 식으로. **이슈�
 
 | 축 | 실험 |
 |---|---|
-| Data standardization (RQ1) | 3개 데이터셋 Bronze -> Silver. **role × 전이 원인 셀 수가 primary** (`rq1_role_transition`, 원인은 사전 등록 규칙 — `rq1-transition-classification.md`). 세대별 헤더 변화는 셀이 아니라 행 단위로 따로 (`rq1_coalesce_source`). aggregate change rate는 진단 |
+| Data standardization (RQ1) | 3개 데이터셋 Bronze -> Silver. **role × 전이 원인 셀 수가 primary** (`rq1_role_transition`, 원인은 결과 확인 전 사전 정의한 규칙 — `rq1-transition-classification.md`). 세대별 헤더 변화는 셀이 아니라 행 단위로 따로 (`rq1_coalesce_source`). aggregate change rate는 진단 |
 | Analytical preparation (RQ2) | T1 단일 데이터셋 집계·추세 |
 | Cross-dataset interoperability (RQ2) | T3 trades + rent join, 네 조건 |
 | Equivalence gate | 네 조건이 같은 분석 결과(`output_hash`)에 도달해야 RQ2 비용을 비교한다. Bronze ↔ Silver는 독립 검증, Silver ↔ Gold와 Bronze ↔ Monolithic은 구성상 동등 |
@@ -132,7 +132,7 @@ seoul-apartment-trades     21         5   1.000 -> 1.000 0.000 -> 0.000     1.00
 - T1·T3의 분석 결과도 독립 구현(harness 파서 vs builder cast) 사이에서 일치한다.
 - role별 변경 수는 raw JSON 타입 수와 정확히 맞는다 (예: rent `monthly_rent` 52,294 =
   JSON 문자열 52,294; bike `gender` 1,981,081 = `""` 1,040,784 + `\N` 940,297).
-- 사전 등록 규칙으로 분류한 전이 원인은 독립된 두 구현(사전 등록 스크립트, 하네스)이 role ×
+- 결과 확인 전 사전 정의한 규칙으로 분류한 전이 원인은 독립된 두 구현(사전 정의 문서를 따른 스크립트, 하네스)이 role ×
   원인 60칸 전부 같았다.
 
 **수정한 설계**

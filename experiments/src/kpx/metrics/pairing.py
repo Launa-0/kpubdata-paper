@@ -175,7 +175,7 @@ def pair_and_classify(
        ``primitive_type_normalization``
     10. anything else — ``other``
 
-    Rules 5 and 7 strip the Bronze value as the pre-registration wrote them;
+    Rules 5 and 7 strip the Bronze value as the pre-specified rules wrote them;
     no value in the measured snapshots is affected by the strip.
 
     Renaming and coalescing never change a value, so they are not causes: each
@@ -341,7 +341,7 @@ def _causes(
     comparable: np.ndarray[Any, Any],
     same_meaning: np.ndarray[Any, Any],
 ) -> np.ndarray[Any, Any]:
-    """One cause per cell, by the pre-registered rules (see :func:`pair_and_classify`)."""
+    """One cause per cell, by the pre-specified rules (see :func:`pair_and_classify`)."""
     kind_left = _over_uniques(left, lambda value: token(value)[0]).astype(str)
     kind_right = _over_uniques(right, lambda value: token(value)[0]).astype(str)
     text_left = kind_left == "str"
