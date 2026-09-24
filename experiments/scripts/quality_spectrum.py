@@ -29,11 +29,19 @@
 predicate도, 데이터셋별 예외도 없다. 어떤 데이터셋이 나쁘게 나오도록 만드는 규칙을
 하나라도 넣으면 이 표는 측정이 아니라 주장이 된다. 계약이 선언한 것만 쓴다.
 
-## 세 가지를 따로 보고한다
+## 무엇이 primary인가
+
+RQ1의 primary는 **role별 표현 전이 표**다 (role마다 바뀐 셀 수와 그 원인). 아래의
+aggregate change rate는 어떤 컬럼을 role로 세느냐(예: ``read_as``만 받는 컬럼)에
+따라 크게 움직이므로 진단이다. coverage/preservation은 integrity check다.
+
+## 품질 지표는 세 가지를 따로 보고한다
 
 ``row-level``
-    H1의 primary다. 계약의 모든 컬럼을 한 spec으로 재므로 ``schema_conformance``와
-    ``parsing_failure_rate``가 레코드 단위로 나온다.
+    비교 지표. 계약의 모든 컬럼을 한 spec으로 재므로 ``schema_conformance``와
+    ``parsing_failure_rate``가 레코드 단위로 나온다. 빌더는 cast가 값을 잃으면 빌드를
+    세우므로, **성공한 빌드에서 Bronze (semantic)과 Silver는 구성상 같다** — 품질
+    향상의 증거가 될 수 없다.
 ``per-column``
     어느 컬럼이 그 숫자를 만들었는지. 진단용이다.
 ``column-macro``
@@ -47,13 +55,13 @@ predicate도, 데이터셋별 예외도 없다. 어떤 데이터셋이 나쁘게
 
 ``Bronze (semantic)``  계약이 선언한 캐스팅을 Bronze에도 준다. ``pd.to_numeric``
                        으로 ``"120,000"``을 실패 처리하면 H1이 아니라 우리가
-                       Bronze에 얼마나 적대적이었는가를 재게 된다. **H1 primary.**
+                       Bronze에 얼마나 적대적이었는가를 재게 된다.
 ``Bronze (naive)``     계약의 파서를 주지 않는다. 값이 없어지는 것이 아니라
                        ``pd.to_numeric``/``pd.to_datetime``이라는 **기본 해석**이
                        쓰인다 — 그래서 '저장 표현 그대로'가 아니라 '계약 파서
-                       없이'가 정확한 이름이다. 별도 전처리 없이 raw를 읽는
-                       분석자가 무엇을 마주하는가를 보며, 데이터 품질이라기보다
-                       **준비 비용**이고 RQ2와 함께 읽는다.
+                       없이'가 정확한 이름이다. 계약의 해석을 받지 않은 reader에
+                       대한 **sensitivity view**이고, 데이터 품질 baseline도
+                       분석자의 준비 시간·노력의 측정도 아니다.
 
 정의를 결과를 보고 고르지 않으려면 둘 다 내놓고 질문을 다르게 붙여야 한다.
 
@@ -252,9 +260,9 @@ def main(argv: list[str] | None = None) -> int:
 
         # 같은 투영을 두 번 읽는다. 조건이 하나 더 생긴 것이 아니라 **같은 Bronze
         # artifact에 대한 두 개의 view**다.
-        #   semantic — 파이프라인이 실제로 쓰는 해석을 Bronze에도 준다. H1 primary.
+        #   semantic — 파이프라인이 실제로 쓰는 해석을 Bronze에도 준다.
         #   naive    — 계약 파서를 주지 않는다. 값이 사라지는 것이 아니라 pandas의
-        #              기본 해석이 쓰인다. 준비 비용을 보는 보조 관측이다.
+        #              기본 해석이 쓰인다. unconfigured reader sensitivity view다.
         semantic = layer_spec(roles, interpreted=True)
         naive = layer_spec(roles, interpreted=False)
         reports = {
@@ -277,11 +285,12 @@ def main(argv: list[str] | None = None) -> int:
             ).to_string(index=False, na_rep="—")
         )
         print(
-            "     H1 primary는 Bronze (semantic) 대 Silver다 — 양쪽에 같은 해석 능력을"
-            " 준다.\n"
-            "     Bronze (naive)는 계약 파서 없이 pandas 기본 해석으로 읽었을 때"
-            " 분석자가 마주하는 것이고,\n"
-            "     데이터 품질이 아니라 준비 비용에 가깝다 (RQ2와 함께 읽는다)."
+            "     Bronze (semantic) 대 Silver는 양쪽에 같은 해석 능력을 준다. 성공한"
+            " 빌드에서는\n"
+            "     구성상 같으므로 integrity check이지 품질 향상의 증거가 아니다.\n"
+            "     Bronze (naive)는 계약 파서 없이 읽은 sensitivity view다 — 데이터 품질"
+            " baseline도\n"
+            "     분석자 노력의 측정도 아니다."
         )
         # 진단 지표는 한 표 안에 섞지 않는다. 나란히 찍으면 두 열을 빼는 읽기를
         # 부르는데, duplicate_rate는 그 읽기를 지탱하지 못한다 — key 없이 전체 행으로
@@ -341,19 +350,34 @@ def main(argv: list[str] | None = None) -> int:
                 }
             )
 
-        print("\n  -- 표준화가 한 일 (H1 primary) --")
+        print("\n  -- 표준화가 한 일: role별 표현 전이 (RQ1 primary) --")
+        print(
+            pd.DataFrame([pair.to_dict() for pair in pairs])[
+                [
+                    "role",
+                    "projection",
+                    "required",
+                    "rows",
+                    "representation_changed_count",
+                    "representation_change_rate",
+                ]
+            ].to_string(index=False)
+        )
+        print("\n  -- aggregate (진단: role 정의에 민감하다) --")
         print(
             pd.DataFrame([aggregate(pairs), aggregate(pairs, required_only=True)]).to_string(
                 index=False, na_rep="—"
             )
         )
         print(
-            "     representation_change_rate는 분석자의 노력이 아니다 — vectorized"
-            " cast 한 줄이\n"
-            "     백만 셀을 바꾼다. 그 정규화를 downstream에서 직접 하는 비용은 RQ2가"
-            " 따로 잰다.\n"
-            "     preservation은 읽힌 값에 대해서만 센다. 읽히지 않은 값은 coverage에"
-            " 남는다."
+            "     aggregate는 어떤 컬럼을 role로 세느냐에 따라 크게 움직인다 (read_as만"
+            " 받는 컬럼을\n"
+            "     넣으면 trades 0.238 -> 0.450). 원천의 성질이 아니라 이 계약·role 정의"
+            " 아래의 값이다.\n"
+            "     분석자의 노력도 아니다 — 그 비용은 RQ2가 따로 잰다. coverage와"
+            " preservation은\n"
+            "     integrity check다 (required role의 preservation은 row identity guard로"
+            " 1.0이 전제된다)."
         )
 
         b_macro, s_macro = macro(b_cols), macro(s_cols)
@@ -386,7 +410,7 @@ def main(argv: list[str] | None = None) -> int:
 
     print()
     print("=" * 78)
-    print("정형화 수준 스펙트럼 — Bronze (semantic) -> Silver, H1 primary")
+    print("정형화 수준 스펙트럼 — Bronze (semantic) -> Silver, 비교 지표 (integrity check)")
     print()
     print(pd.DataFrame(summary).to_string(index=False))
     print()
