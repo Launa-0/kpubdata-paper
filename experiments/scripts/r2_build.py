@@ -49,10 +49,12 @@ INTEGRATED_RUN = bike_spec.SPEC["run_id"]
 
 
 def build(generation: str, work_root: Path) -> dict[str, object]:
+    import logging
+
     import polars as pl
     from _upload_store import FileUploadRepository
     from kpubdata_builder.pipeline import run_build
-    from perturbation import classify
+    from perturbation import _Capture, classify
 
     snapshot_id = GENERATIONS[generation]
     source = snapshot_source(SNAPSHOTS, snapshot_id)
@@ -71,19 +73,28 @@ def build(generation: str, work_root: Path) -> dict[str, object]:
         encoding="utf-8",
         original_filename="raw_records.jsonl",
     )
+    # 빌더는 멈춘 이유를 outcome이 아니라 로그로 남긴다("pipeline failed for source").
+    # perturbation과 같은 방식으로 잡아 멈춘 단계를 가른다.
+    capture = _Capture()
+    log = logging.getLogger("kpubdata_builder")
+    log.addHandler(capture)
     started = time.perf_counter()
-    result = run_build(
-        bike_spec.build_spec(upload.upload_id, description=f"R2 {generation}"),
-        client=None,
-        output_root=runs,
-        run_id=run_id,
-        owner_id="paper-experiment",
-        upload_repository=repository,
-    )
+    try:
+        result = run_build(
+            bike_spec.build_spec(upload.upload_id, description=f"R2 {generation}"),
+            client=None,
+            output_root=runs,
+            run_id=run_id,
+            owner_id="paper-experiment",
+            upload_repository=repository,
+        )
+    finally:
+        log.removeHandler(capture)
     identity = _builder_identity.write(runs / run_id)
     outcome = result.outcomes[0]
     silver = runs / run_id / "silver" / bike_spec.ALIAS / "table.parquet"
     ok = outcome.status == "ok" and silver.exists()
+    message = " || ".join([outcome.error or "", *capture.errors])
     return {
         "generation": generation,
         "snapshot_id": snapshot_id,
@@ -91,8 +102,8 @@ def build(generation: str, work_root: Path) -> dict[str, object]:
         "rows_in": rows_in,
         "status": outcome.status,
         "stages_completed": ",".join(outcome.stages_completed),
-        "failed_stage": None if ok else classify(outcome.error or "", outcome.stages_completed),
-        "error": None if ok else outcome.error,
+        "failed_stage": None if ok else classify(message, outcome.stages_completed),
+        "error": None if ok else message[:600],
         "rows_out": pl.scan_parquet(silver).select(pl.len()).collect().item() if ok else 0,
         "builder": _builder_identity.as_version(identity),
         "seconds": round(time.perf_counter() - started, 1),
