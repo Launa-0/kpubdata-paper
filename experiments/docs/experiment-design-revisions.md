@@ -21,11 +21,11 @@ Figure 3에 넣거나, 아파트 R2의 33%를 인용하는 식으로. **이슈�
 
 | 축 | 실험 |
 |---|---|
-| Data standardization (RQ1) | 3개 데이터셋 Bronze -> Silver. **role별 전이 범주·원인 표가 primary**, aggregate change rate는 진단 |
+| Data standardization (RQ1) | 3개 데이터셋 Bronze -> Silver. **role × 전이 원인 셀 수가 primary** (`rq1_role_transition`, 원인은 사전 등록 규칙). 세대별 헤더 변화는 셀이 아니라 행 단위로 따로 (`rq1_coalesce_source`). aggregate change rate는 진단 |
 | Analytical preparation (RQ2) | T1 단일 데이터셋 집계·추세 |
 | Cross-dataset interoperability (RQ2) | T3 trades + rent join, 네 조건 |
 | Recomputation / timing (RQ2) | T1·T3, 같은 엔진·포맷 통제, S1–S4 분리, raw 반복 저장, 조건 interleave — **재측정 예정** |
-| Frozen-source determinism | R1 |
+| Frozen-source determinism | R1 — 기존 구현. 이번 구현 감사에서 재검증하지 않았다 — protocol freeze 전 재검증 예정 |
 | Source evolution | 따릉이 G1 / G2 / I1 / G3 / G4 |
 | Contract boundary | 통제된 perturbation (선언 부족 / 표현력 한계 / 구현 결함으로 분류) |
 | Storage trade-off | observed on-disk footprint + same-format controlled 비교 (반영 범위 검토 중) |

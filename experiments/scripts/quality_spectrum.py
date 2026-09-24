@@ -93,7 +93,7 @@ import pandas as pd  # noqa: E402
 from _paths import DEFAULT_WORK_ROOT, SNAPSHOTS  # noqa: E402
 
 from kpx.datasets import read_artifact  # noqa: E402
-from kpx.metrics.pairing import aggregate, assert_row_identity, pair_roles  # noqa: E402
+from kpx.metrics.pairing import aggregate, assert_row_identity, pair_and_classify  # noqa: E402
 from kpx.metrics.quality import (  # noqa: E402
     H1_COMPARABLE_METRICS,
     H1_DIAGNOSTIC_METRICS,
@@ -106,6 +106,7 @@ from kpx.metrics.quality import (  # noqa: E402
 from kpx.metrics.roles import (  # noqa: E402
     Role,
     assert_symmetric,
+    coalesce_sources,
     interpreter_for,
     plan_roles,
     project,
@@ -196,10 +197,13 @@ def main(argv: list[str] | None = None) -> int:
     args = parser.parse_args(argv)
 
     summary: list[dict[str, Any]] = []
-    # RQ1 전용 테이블 두 벌. ResultRow는 (task, condition, seed) run 하나가 한 행이라
+    # RQ1 전용 테이블. ResultRow는 (task, condition, seed) run 하나가 한 행이라
     # grain이 다르다 — 이것은 run이 아니라 artifact 쌍을 재는 측정이다.
     layer_rows: list[dict[str, Any]] = []
     role_rows: list[dict[str, Any]] = []
+    # role × 전이 원인, 셀 단위 (primary). coalesce 원천 컬럼은 행 단위라 따로 둔다.
+    transition_rows: list[dict[str, Any]] = []
+    source_rows: list[dict[str, Any]] = []
     for module_name in SPEC_MODULES:
         try:
             spec_module = importlib.import_module(module_name)
@@ -334,9 +338,15 @@ def main(argv: list[str] | None = None) -> int:
         # 짝짓기는 위치로 한다. 길이가 같다는 것은 같은 행이라는 뜻이 아니므로,
         # required role이 모든 행에서 같게 읽히는지 먼저 확인한다.
         assert_row_identity(bronze_roles, silver_roles, roles)
-        pairs = pair_roles(bronze_roles, silver_roles, roles)
+        pairs, transitions = pair_and_classify(bronze_roles, silver_roles, roles)
         for pair in pairs:
             role_rows.append({"dataset": dataset, **anchor, **pair.to_dict()})
+        for transition in transitions:
+            transition_rows.append({"dataset": dataset, **anchor, **transition})
+        # 세대마다 헤더가 달라진 것은 셀 변화가 아니다 — 투영 전 Bronze에서 행 단위로 센다.
+        sources = coalesce_sources(bronze, roles)
+        for source in sources:
+            source_rows.append({"dataset": dataset, **anchor, **source})
         for view, report in (
             ("bronze_naive", bronze_naive),
             ("bronze_semantic", reports["bronze"]),
@@ -354,19 +364,21 @@ def main(argv: list[str] | None = None) -> int:
                 }
             )
 
-        print("\n  -- 표준화가 한 일: role별 표현 전이 (RQ1 primary) --")
+        print("\n  -- 표준화가 한 일: role별 전이 원인, 셀 단위 (RQ1 primary) --")
+        causes = pd.DataFrame(transitions)
         print(
-            pd.DataFrame([pair.to_dict() for pair in pairs])[
-                [
-                    "role",
-                    "projection",
-                    "required",
-                    "rows",
-                    "representation_changed_count",
-                    "representation_change_rate",
-                ]
+            causes[causes["category"] != "unchanged"][
+                ["role", "structural", "category", "cells"]
             ].to_string(index=False)
         )
+        print(
+            "     원인은 결과를 보기 전에 고정한 규칙으로 붙인다 (pair_and_classify)."
+            " unchanged는 생략했다.\n"
+            "     structural(rename/coalesce/derived)은 컬럼의 전이이고 셀 원인이 아니다."
+        )
+        if sources:
+            print("\n  -- coalesce: 어느 원천 컬럼이 값을 댔는가, 행 단위 (셀 분모와 별도) --")
+            print(pd.DataFrame(sources).to_string(index=False))
         print("\n  -- aggregate (진단: role 정의에 민감하다) --")
         print(
             pd.DataFrame([aggregate(pairs), aggregate(pairs, required_only=True)]).to_string(
@@ -427,7 +439,12 @@ def main(argv: list[str] | None = None) -> int:
     # rate와 함께 **count를 저장한다** — role마다 유효 값 수가 달라서 rate의 단순
     # 평균은 또 하나의 macro-average가 된다.
     args.results.mkdir(parents=True, exist_ok=True)
-    for name, rows in (("rq1_layer_quality", layer_rows), ("rq1_role_pair", role_rows)):
+    for name, rows in (
+        ("rq1_layer_quality", layer_rows),
+        ("rq1_role_pair", role_rows),
+        ("rq1_role_transition", transition_rows),
+        ("rq1_coalesce_source", source_rows),
+    ):
         path = args.results / f"{name}.parquet"
         pd.DataFrame(rows).to_parquet(path, index=False)
         print(f"{name}: {len(rows)}행 -> {path}")

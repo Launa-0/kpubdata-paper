@@ -51,6 +51,7 @@ __all__ = [
     "INTERPRETERS",
     "Role",
     "assert_symmetric",
+    "coalesce_sources",
     "interpreter_for",
     "plan_roles",
     "project",
@@ -278,6 +279,32 @@ def project(frame: pd.DataFrame, roles: Sequence[Role], *, layer: str) -> pd.Dat
         else:
             columns[role.name] = frame[present[0]]
     return pd.DataFrame(columns, index=frame.index)
+
+
+def coalesce_sources(frame: pd.DataFrame, roles: Sequence[Role]) -> list[dict[str, Any]]:
+    """For each coalesced role, which Bronze column supplied each row's value.
+
+    A header that changed across source generations is a schema transition, not
+    a cell rewrite: the value under ``대여년월`` is the same kind of value that
+    used to sit under ``대여일자``. So it is counted in rows per source column,
+    beside the cell-level causes rather than in their denominator. ``source`` is
+    ``None`` for rows where no candidate held a value.
+    """
+    counts: list[dict[str, Any]] = []
+    for role in roles:
+        if role.projection != "coalesce":
+            continue
+        remaining = pd.Series(True, index=frame.index)
+        for column in role.bronze:
+            if column not in frame.columns:
+                continue
+            supplied = remaining & frame[column].notna()
+            if supplied.any():
+                counts.append({"role": role.name, "source": column, "rows": int(supplied.sum())})
+            remaining &= ~supplied
+        if remaining.any():
+            counts.append({"role": role.name, "source": None, "rows": int(remaining.sum())})
+    return counts
 
 
 def assert_symmetric(bronze: pd.DataFrame, silver: pd.DataFrame, roles: Sequence[Role]) -> None:
