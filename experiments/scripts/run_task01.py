@@ -138,13 +138,11 @@ def main(argv: list[str] | None = None) -> int:
     except ProvenanceError as error:
         raise SystemExit(f"{error}\n먼저 scripts/record_builds.py를 실행하라.") from error
 
-    # Gold는 Silver에서 파생된다. Silver를 다시 빌드했는데 Gold가 그대로면 옛
-    # 스키마로 만든 집계 위에서 측정이 돌고, 그 숫자는 틀린 채로 맞아 보인다.
-    # --fresh는 Gold도 다시 만든다. 결과 행만 지우면 빌드 비용을 재지 않게 되어
-    # 손익분기가 빠지는데, 그것도 --fresh가 다시 내야 할 숫자다.
-    gold_build_seconds: float | None = None
-    if args.fresh or not gold.exists() or gold.stat().st_mtime < silver.stat().st_mtime:
-        gold_build_seconds = build_gold(silver, gold)
+    # Gold는 매번 다시 만든다. 기존 파일을 mtime만 보고 재사용하면, Gold를 만드는
+    # 코드(``gold_recipe``)가 바뀌었는데 Silver는 그대로일 때 옛 바이트가 새 recipe로
+    # 기록된다 — provenance가 본 적 없는 바이트를 서술하게 된다. 빌드는 1초 남짓이고,
+    # 그 비용은 손익분기 계산에도 필요하다.
+    gold_build_seconds = build_gold(silver, gold)
 
     materialized = pd.read_parquet(gold)
     gold_build = record_derived_layer(
@@ -284,7 +282,7 @@ def main(argv: list[str] | None = None) -> int:
     # Gold의 준비 비용이 낮은 것은 그 비용이 사라져서가 아니라 상류 빌드로 옮겨갔기
     # 때문이다. 낮은 숫자만 보고하면 trade-off의 절반만 적는 셈이다.
     per_analysis = {row.condition: row.runtime_seconds for row in measured}
-    if gold_build_seconds is not None and {"silver", "gold"} <= per_analysis.keys():
+    if {"silver", "gold"} <= per_analysis.keys():
         report = break_even(
             build_cost=gold_build_seconds,
             baseline_per_analysis=per_analysis["silver"],
@@ -298,8 +296,6 @@ def main(argv: list[str] | None = None) -> int:
         print(f"  손익분기              : {report.analyses_to_break_even}회째 분석")
         print("\n  Silver 빌드 비용은 두 조건에 공통이라 상쇄된다. 여기서 분할상환되는")
         print("  것은 Gold 빌드뿐이다.")
-    else:
-        print("\n  (Gold가 이미 있어 빌드 비용을 재지 않았다. --fresh 로 다시 돌리면 나온다.)")
 
     return 0
 
