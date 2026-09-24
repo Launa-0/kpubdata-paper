@@ -51,8 +51,14 @@ DIGEST_PREFIX = 12
 
 
 def _git(repo: Path, *args: str) -> str:
+    # UTF-8을 명시한다. text=True만 주면 Windows에서 locale(cp949)로 디코드하다
+    # 한국어 diff에서 reader 스레드가 죽고 stdout이 None이 된다.
     result = subprocess.run(
-        ["git", "-C", str(repo), *args], capture_output=True, text=True, check=False
+        ["git", "-C", str(repo), *args],
+        capture_output=True,
+        encoding="utf-8",
+        errors="replace",
+        check=False,
     )
     return result.stdout if result.returncode == 0 else ""
 
