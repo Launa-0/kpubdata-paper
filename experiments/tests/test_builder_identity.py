@@ -7,6 +7,7 @@
 
 from __future__ import annotations
 
+import json
 import subprocess
 import sys
 from pathlib import Path
@@ -46,6 +47,16 @@ def test_tracked_edit_changes_digest(tmp_path: Path) -> None:
     (repo / "mod.py").write_text("VALUE = 2\n", encoding="utf-8")
     before = bi._worktree_digest(repo, _status(repo))
     (repo / "mod.py").write_text("VALUE = 3\n", encoding="utf-8")
+    assert bi._worktree_digest(repo, _status(repo)) != before
+
+
+def test_a_non_ascii_edit_is_hashed_rather_than_crashing(tmp_path: Path) -> None:
+    """빌더 소스는 한국어 주석투성이다. ``text=True``가 locale(cp949)로 diff를 읽으면
+    reader 스레드가 죽고 stdout이 None이 된다 — dirty 빌더로 처음 빌드했을 때 났다."""
+    repo = _repo(tmp_path / "r")
+    (repo / "mod.py").write_text("# 날짜 조각 — 손실\nVALUE = 2\n", encoding="utf-8")
+    before = bi._worktree_digest(repo, _status(repo))
+    (repo / "mod.py").write_text("# 날짜 조각 — 손실 감사\nVALUE = 2\n", encoding="utf-8")
     assert bi._worktree_digest(repo, _status(repo)) != before
 
 
@@ -104,3 +115,19 @@ def test_write_read_roundtrip(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -
     assert bi.write(run_dir) == captured
     assert bi.read(run_dir) == captured
     assert bi.read(tmp_path / "runs" / "absent") is None
+
+
+def test_version_of_a_run_without_identity_stops(tmp_path: Path) -> None:
+    """빌더를 모르는 산출물은 측정하지 않는다 — 체크섬으로는 빌더를 가를 수 없다."""
+    with pytest.raises(SystemExit, match="builder_identity"):
+        bi.version_of(tmp_path)
+
+
+def test_version_of_matches_what_record_builds_writes(tmp_path: Path) -> None:
+    identity = {
+        "package_version": "0.4.0.dev0",
+        "git_commit": "096d023f9546abc",
+        "git_dirty": False,
+    }
+    (tmp_path / bi.FILENAME).write_text(json.dumps(identity), encoding="utf-8")
+    assert bi.version_of(tmp_path) == bi.as_version(identity) == "0.4.0.dev0+096d023f9546"

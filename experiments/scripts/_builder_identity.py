@@ -51,8 +51,14 @@ DIGEST_PREFIX = 12
 
 
 def _git(repo: Path, *args: str) -> str:
+    # UTF-8을 명시한다. text=True만 주면 Windows에서 locale(cp949)로 디코드하다
+    # 한국어 diff에서 reader 스레드가 죽고 stdout이 None이 된다.
     result = subprocess.run(
-        ["git", "-C", str(repo), *args], capture_output=True, text=True, check=False
+        ["git", "-C", str(repo), *args],
+        capture_output=True,
+        encoding="utf-8",
+        errors="replace",
+        check=False,
     )
     return result.stdout if result.returncode == 0 else ""
 
@@ -152,3 +158,20 @@ def as_version(identity: dict[str, Any] | None) -> str | None:
         digest = str(identity.get("git_diff_sha256") or "")[:DIGEST_PREFIX]
         suffix += f".dirty.{digest}" if digest else ".dirty"
     return version + suffix
+
+
+def version_of(run_dir: Path) -> str:
+    """측정할 빌드 디렉터리가 어느 빌더로 만들어졌는지. 모르면 멈춘다.
+
+    체크섬만으로는 빌더를 가를 수 없다 — ``date_parts`` 수정 전후 빌더가 byte 단위로
+    같은 Silver를 냈다. 측정이 어느 빌더의 빌드를 읽었는지 말하려면 이 신원이 있어야
+    하고, ``record_builds.py``가 ``pipeline_version``을 만들 때 쓴 것과 같은 문자열이어야
+    기록과 맞춰 볼 수 있다.
+    """
+    version = as_version(read(run_dir))
+    if version is None:
+        raise SystemExit(
+            f"{run_dir}에 {FILENAME}이 없다 — 어느 빌더가 만든 산출물인지 말할 수 없다. "
+            "scripts/build_silver.py로 다시 빌드하라."
+        )
+    return version

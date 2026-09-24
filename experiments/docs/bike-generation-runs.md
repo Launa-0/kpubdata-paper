@@ -368,3 +368,132 @@ git_commit  5d86eedf3a1ab80f1ac237d7d406e08fe51e745c   git_dirty  false
 config_hash f9f6813c9110
 status      G1 ok  G2 ok  I1 ok  G3 ok  T4 ok  /  G4 failed (coalesce / ym_raw)
 ```
+
+## RQ1 재측정 — 예측은 맞았고, H1 헤드라인은 사라졌다
+
+`quality_spectrum.py`를 이 빌드 위에서 다시 돌렸다. 위에서 적은 예측
+("`gender` 40.4%는 primary `missing_rate`가 아니다")을 실측이 확인한다.
+그리고 같이 고친 두 가지 — 비교 단위를 컬럼에서 **role**로 바꾼 것과, Bronze를
+계약의 파서로 한 번 더 읽은 것 — 이 H1의 원래 주장을 무너뜨렸다.
+
+### 어느 빌드를 쟀는지가 출력에 박힌다
+
+측정은 이제 스냅샷·config_hash·output_checksum을 provenance와 대조해 build_id를
+확정한 뒤에 시작한다. 하나라도 어긋나면 표를 찍지 않고 멈춘다.
+
+```
+seoul-apartment-trades  build cdee737a1efd46f6  0.4.0.dev0+5d86eedf3a1a+226f0ff82769
+seoul-apartment-rent    build 50c1bf157cbba602  0.4.0.dev0+5d86eedf3a1a+e65edbfc1f6d
+seoul-bike-rent-month   build 7184f2ccba910a4f  0.4.0.dev0+5d86eedf3a1a+f9f6813c9110
+```
+
+### Bronze를 두 번 읽는다
+
+같은 artifact에 대한 두 개의 **측정 view**지 두 개의 condition이 아니다.
+
+- **Bronze (semantic)** — 계약이 선언한 cast와 null token을 그대로 적용해 읽는다.
+  빌드가 그 바이트를 읽은 방식이다.
+- **Bronze (naive)** — 계약 파서 없이 pandas 기본 해석으로 읽는다. 계약의 해석을
+  받지 않은 reader가 무엇을 보는지에 대한 **sensitivity view**다. 데이터 품질의
+  baseline도, 분석자의 준비 시간·노력의 측정도 아니다.
+
+측정 쪽 파서는 빌더에 맞춘다. polars `Int64(strict=False)`는 `"12.0"`도 `" 7 "`도
+버리고, 쉼표와 공백을 터는 것은 `int_comma`/`float_comma`뿐이다. 측정이 빌더보다
+관대하면 Bronze가 빌드가 실제로 본 것보다 깨끗해 보인다 — Bronze에 적대적인
+파서를 주는 것과 방향만 반대인 같은 편향이다.
+
+### 결과: 비교 지표가 전부 평평하다
+
+```
+               Dataset  Roles  Required type_consistency   missing_rate schema_conformance parsing_failure_rate
+seoul-apartment-trades     21         5   1.000 -> 1.000 0.000 -> 0.000     1.000 -> 1.000       0.000 -> 0.000
+  seoul-apartment-rent     18         5   1.000 -> 1.000 0.000 -> 0.000     1.000 -> 1.000       0.000 -> 0.000
+ seoul-bike-rent-month     11         3   1.000 -> 1.000 0.000 -> 0.000     1.000 -> 1.000       0.000 -> 0.000
+```
+
+양쪽에 같은 해석 능력을 주면 세 데이터셋 모두 H1 비교 지표가 동률이다. 예전의
+`1.000 -> 0.000`, `0.000 -> 1.000`은 데이터의 성질이 아니라 Bronze에만 적대적인
+reader를 준 결과였다. **이것이 정직한 결과이므로 그대로 둔다. 고칠 것은 숫자가
+아니라 주장이다.**
+
+이 동률은 우연이 아니라 구조적이다. 빌더는 선언된 cast가 값을 null로 떨어뜨리면
+빌드를 세우므로(#188), 빌드가 성공했다는 것은 Bronze를 계약 파서로 읽어도 실패가
+없다는 뜻이다. 따라서 이 비교 지표는 성공한 빌드에서 차이를 낼 수 없다 — "Silver의
+품질 향상"은 이 지표로 검증도 반증도 되지 않는다.
+
+naive view에는 그 숫자가 그대로 남는다.
+
+```
+seoul-apartment-rent    parsing_failure_rate  Bronze(naive) 0.988238  vs  Bronze(semantic) 0.000
+                        schema_conformance    Bronze(naive) 0.011762  vs  Bronze(semantic) 1.000
+                        type_consistency      Bronze(naive) 0.890133  vs  Bronze(semantic) 1.000
+seoul-apartment-trades  parsing_failure_rate  Bronze(naive) 1.000     vs  Bronze(semantic) 0.000
+```
+
+그러므로 RQ1의 주장은 "Silver가 원천의 오류를 고쳤다"가 아니다. **차이는 데이터에
+있지 않고 해석 로직을 어디에 두느냐에 있다** — Bronze에서는 downstream이, Silver에서는
+파이프라인이 갖는다. Silver는 그 해석을 upstream에 materialize한다. 그것이 비용을
+얼마나 바꾸는지는 이 표가 아니라 RQ2가 따로 잰다.
+
+(갱신) 처음에는 따릉이 `type_consistency` 0.999571 -> 1.000이 유일한 실질 차이로
+보였다. 이것은 측정이 계약의 null token(`\N`)을 몰라 `carbon_kg`/`exercise_kcal`의
+결측 0.001072를 파싱 실패로 센 결과였다. null token을 반영한 뒤에는 Bronze(semantic)도
+1.000이고 두 컬럼의 결측은 양쪽 모두 0.001072다. 0.999571은 naive view에만 남는다.
+
+### role로 비교한다
+
+예전 계획은 `rename`과 `casts`만 보고 `Bronze 컬럼 -> Silver 컬럼`을 맞췄다.
+`coalesce`(`대여일자` **또는** `대여년월` -> `ym_raw`)와 `derived`(세 조각에서
+만든 `deal_date`)를 표현할 수 없었고, 못 찾은 role을 Bronze 쪽에서 조용히
+빼 버려 두 계층이 다른 분모 위에서 측정됐다. 따릉이는 required 2개 대 3개,
+실거래가·전월세는 4개 대 5개였다.
+
+이제 role은 한 번 선언되고 계층별 producer를 갖는다 — `direct` / `coalesce` /
+`parts`. 투영 뒤 두 계층이 같은 컬럼을 갖고, 남는 비대칭은 선언 버그로 예외를
+던진다. required는 5 / 5 / 3으로 맞다.
+
+### gender 40.4%
+
+`gender`의 40.4%는 per-column 진단표에만 나타난다. 계약의 null token(`\N`, `""`)을
+아는 reader로 읽으면 Bronze와 Silver가 같다.
+
+```
+                    gender missing   carbon_kg missing
+Bronze (naive)            0.000             0.000
+Bronze (semantic)         0.404118          0.001072
+Silver                    0.404118          0.001072
+```
+
+(갱신) 이전 판은 Bronze 0.0 -> Silver 0.404를 적고 "Bronze의 0이 핵심"이라고 했다.
+그 0은 per-column 측정이 null token을 모르던 때의 값이고, 지금 정의로는 naive view의
+값이다. 결측은 Silver가 만든 것이 아니라 원천이 `\N`/`""`로 **이미 말하고 있던 것**이고,
+naive reader만 그것을 결측으로 읽지 못한다.
+
+그러므로 논문에서 이 값을 "Silver에서 결측이 늘었다"로 쓰면 안 된다. 같은 계약으로
+읽으면 결측률은 계층 간에 같고, 차이는 reader가 계약의 결측 표기를 아느냐에만 있다.
+
+### duplicate_rate는 비교 지표가 아니다
+
+`duplicate_rate` 0.000004 = 22 / 4,902,236으로, 앞에서 쌍 단위로 확인한 22와 같다.
+
+role 투영 이후로는 "두 계층의 컬럼 집합이 다르다"가 더 이상 이유가 아니다.
+양쪽 다 같은 role 위에서 센다. 남는 이유는 더 미묘하다 — key가 없으므로 이것은
+**저장 표현 위의 exact-row equality**이지 `interpret`이 만든 값 위의 equality가
+아니다. 같은 것을 뜻하지만 결측 성별을 한 행은 `\N`으로 다른 행은 `""`로 적은 두
+행은 Bronze에서 다르고 Silver에서 같다. canonicalization이 그 차이를 지우면서
+rate를 **올린다.**
+
+```
+seoul-bike-rent-month   duplicate_rate  0.000000 -> 0.000004
+seoul-apartment-rent    duplicate_rate  0.041595 -> 0.043701
+seoul-apartment-trades  duplicate_rate  0.008853 -> 0.008990
+```
+
+세 데이터셋 모두 같은 방향이다. 상승이 악화가 아니고 하락이 개선이 아니므로,
+두 계층의 값을 빼서 품질 변화로 읽을 수 없다. 따릉이 22쌍을 직접 열어 확인했고
+차이는 `성별` 하나뿐이었다 — 정확히 이 메커니즘이다.
+
+그래서 저장은 하되 표시에서 분리했다 — `H1_COMPARABLE_METRICS`와
+`H1_DIAGNOSTIC_METRICS`로 나누고, 진단표에는 improvement 열을 아예 두지 않는다.
+결과 parquet에는 여섯 지표가 그대로 남는다. **버린 것이 아니라 해석 수준을
+낮춘 것이다.**

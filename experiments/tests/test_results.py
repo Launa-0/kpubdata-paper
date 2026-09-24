@@ -294,3 +294,21 @@ def test_the_index_is_not_part_of_the_result() -> None:
     """A positional index is an artifact of how the frame was built."""
     frame = pd.DataFrame({"v": [1.0, 2.0]})
     assert output_digest(frame) == output_digest(frame.iloc[::-1].iloc[::-1])
+
+
+def test_dropping_a_task_keeps_every_other_task(tmp_path: Path) -> None:
+    """``--fresh``는 자기 과제의 행만 지운다. 파일째 지우면 T3의 재실행이 T1 결과를 지운다."""
+    results = store(tmp_path)
+    results.append(make_row(run_id="t1", task="task01"))
+    results.append(make_row(run_id="t3", task="task03"))
+
+    results.drop_task("task03")
+
+    assert list(results.load()["run_id"]) == ["t1"]
+    assert list(pd.read_csv(results.csv_path)["run_id"]) == ["t1"]
+
+
+def test_dropping_a_task_from_an_absent_store_is_a_no_op(tmp_path: Path) -> None:
+    results = store(tmp_path)
+    results.drop_task("task01")
+    assert not results.path.exists()

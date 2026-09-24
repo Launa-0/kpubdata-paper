@@ -16,13 +16,19 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
+import _builder_identity  # noqa: E402
 import pandas as pd  # noqa: E402
 from _paths import DEFAULT_WORK_ROOT, SNAPSHOTS, snapshot_source  # noqa: E402
+from trades_spec import SPEC  # noqa: E402
 
 from kpx.datasets import LayerStore  # noqa: E402
 from kpx.metrics.breakeven import break_even  # noqa: E402
 from kpx.metrics.runtime import MEASURED_RUNS, WARMUP_RUNS  # noqa: E402
-from kpx.pipeline import assert_same_inputs, record_derived_layer  # noqa: E402
+from kpx.pipeline import (  # noqa: E402
+    assert_same_inputs,
+    bind_measured_artifact,
+    record_derived_layer,
+)
 from kpx.provenance import ProvenanceError, ProvenanceStore  # noqa: E402
 from kpx.results import default_store  # noqa: E402
 from kpx.runner import run_condition  # noqa: E402
@@ -113,30 +119,30 @@ def main(argv: list[str] | None = None) -> int:
     gold_dir = args.work_root / "gold" / "task01"
     gold = gold_dir / "trades_district_month.parquet"
 
-    # 어떤 빌드를 읽는지 기록에서 확인한다. 기록이 없으면 이 측정이 어떤 입력에서
-    # 나왔는지 말할 수 없으므로, 추측하지 않고 멈춘다.
+    # 어떤 빌드를 읽는지 기록에서 확정한다. "가장 최근에 기록된 빌드"는 답이 아니다 —
+    # 다른 스냅샷이나 다른 빌더의 빌드가 나중에 기록되면 틀린 기록을 집는다. 실제로
+    # 읽을 바이트를 스냅샷·계약·체크섬·빌더 신원으로 기록과 맞춘다.
+    if args.snapshot_id != SPEC["snapshot_id"]:
+        raise SystemExit(
+            f"trades_spec은 {SPEC['snapshot_id']}를 선언하는데 {args.snapshot_id}로 측정하려 한다."
+        )
     store_root = args.datasets or Path(__file__).resolve().parents[1] / "datasets"
     builds = ProvenanceStore(store_root)
-    silver_builds = builds.list_builds(DATASET, "silver")
-    if not silver_builds:
-        raise SystemExit(
-            f"{DATASET}의 silver 빌드 기록이 없다. "
-            f"먼저 scripts/record_builds.py {args.snapshot_id} 를 실행하라."
+    try:
+        silver_build = bind_measured_artifact(
+            silver.parent,
+            spec={**SPEC, "run_id": args.run_id},
+            store=builds,
+            builder_version=_builder_identity.version_of(args.work_root / "runs" / args.run_id),
         )
-    silver_build = silver_builds[-1]
-    if silver_build.inputs.snapshot_id != args.snapshot_id:
-        raise SystemExit(
-            f"기록된 silver 빌드는 {silver_build.inputs.snapshot_id} 에서 나왔는데 "
-            f"{args.snapshot_id} 로 측정하려 한다."
-        )
+    except ProvenanceError as error:
+        raise SystemExit(f"{error}\n먼저 scripts/record_builds.py를 실행하라.") from error
 
-    # Gold는 Silver에서 파생된다. Silver를 다시 빌드했는데 Gold가 그대로면 옛
-    # 스키마로 만든 집계 위에서 측정이 돌고, 그 숫자는 틀린 채로 맞아 보인다.
-    # --fresh는 Gold도 다시 만든다. 결과 행만 지우면 빌드 비용을 재지 않게 되어
-    # 손익분기가 빠지는데, 그것도 --fresh가 다시 내야 할 숫자다.
-    gold_build_seconds: float | None = None
-    if args.fresh or not gold.exists() or gold.stat().st_mtime < silver.stat().st_mtime:
-        gold_build_seconds = build_gold(silver, gold)
+    # Gold는 매번 다시 만든다. 기존 파일을 mtime만 보고 재사용하면, Gold를 만드는
+    # 코드(``gold_recipe``)가 바뀌었는데 Silver는 그대로일 때 옛 바이트가 새 recipe로
+    # 기록된다 — provenance가 본 적 없는 바이트를 서술하게 된다. 빌드는 1초 남짓이고,
+    # 그 비용은 손익분기 계산에도 필요하다.
+    gold_build_seconds = build_gold(silver, gold)
 
     materialized = pd.read_parquet(gold)
     gold_build = record_derived_layer(
@@ -169,10 +175,10 @@ def main(argv: list[str] | None = None) -> int:
     if args.fresh:
         # 측정 방법이 바뀐 뒤의 재실행이다. 이전 행과 섞이면 한 표 안에 서로 다른
         # 방법으로 잰 숫자가 공존하게 된다. 저장소는 같은 run_id의 재기록을
-        # 거부하므로, 지우는 것은 의도를 밝힌 경우에만 한다.
-        for path in (results.path, results.csv_path):
-            path.unlink(missing_ok=True)
-        print(f"이전 결과를 지우고 새로 기록한다: {results.path.name}")
+        # 거부하므로, 지우는 것은 의도를 밝힌 경우에만 한다. 이 과제의 행만 지운다 —
+        # 파일은 과제들이 함께 쓰므로 파일째 지우면 다른 과제의 결과가 사라진다.
+        results.drop_task(TASK.name)
+        print(f"{TASK.name}의 이전 결과를 지우고 새로 기록한다: {results.path.name}")
 
     # 스냅샷과 파이프라인 식별자는 손으로 넣지 않고 방금 읽은 빌드 기록에서 가져온다.
     # run_fields의 키는 결과 스키마의 이름이고, 러너 인자명은 다르다.
@@ -276,7 +282,7 @@ def main(argv: list[str] | None = None) -> int:
     # Gold의 준비 비용이 낮은 것은 그 비용이 사라져서가 아니라 상류 빌드로 옮겨갔기
     # 때문이다. 낮은 숫자만 보고하면 trade-off의 절반만 적는 셈이다.
     per_analysis = {row.condition: row.runtime_seconds for row in measured}
-    if gold_build_seconds is not None and {"silver", "gold"} <= per_analysis.keys():
+    if {"silver", "gold"} <= per_analysis.keys():
         report = break_even(
             build_cost=gold_build_seconds,
             baseline_per_analysis=per_analysis["silver"],
@@ -290,8 +296,6 @@ def main(argv: list[str] | None = None) -> int:
         print(f"  손익분기              : {report.analyses_to_break_even}회째 분석")
         print("\n  Silver 빌드 비용은 두 조건에 공통이라 상쇄된다. 여기서 분할상환되는")
         print("  것은 Gold 빌드뿐이다.")
-    else:
-        print("\n  (Gold가 이미 있어 빌드 비용을 재지 않았다. --fresh 로 다시 돌리면 나온다.)")
 
     return 0
 

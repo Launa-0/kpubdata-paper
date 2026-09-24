@@ -11,12 +11,12 @@
 
 그래서 컬럼은 **각 데이터셋의 Silver 계약에서 자동으로 유도한다.**
 
-- ``rename``이 Bronze 이름 ↔ Silver 이름 대응을 준다. 역할(role)은 Silver 이름이다.
+- ``rename``/``coalesce``/``derived``가 각 role을 Bronze에서 어떻게 얻는지 준다.
 - ``casts``가 선언된 필드는 **그 캐스팅이 기대 타입**이다 (``int``/``float``/
   ``int_comma``/``float_comma`` → numeric, ``date``/``datetime`` → date).
-- ``casts``에만 있고 ``rename``에 없는 필드는 양쪽에서 이름이 같다.
-- ``derived`` 필드는 Bronze에 존재하지 않으므로 **짝 비교에서 빼고** Silver 단독으로
-  따로 보고한다.
+- 어느 쪽에서도 얻을 수 없는 role은 빼지 않고 **멈춘다**. 조용히 빠지면 두 계층의
+  분모가 달라지고 표는 그대로 찍힌다 — 실제로 그렇게 따릉이를 required 2개 대
+  3개로 재고 있었다.
 
 계약이 타입을 선언하지 않은 컬럼은 ``text``다. ``code``로 두지 않는 이유가 있다 —
 ``code``는 ``valid_codes`` 없이는 "문자열이 문자열로 읽히는가"만 보므로 **무조건
@@ -29,11 +29,19 @@
 predicate도, 데이터셋별 예외도 없다. 어떤 데이터셋이 나쁘게 나오도록 만드는 규칙을
 하나라도 넣으면 이 표는 측정이 아니라 주장이 된다. 계약이 선언한 것만 쓴다.
 
-## 세 가지를 따로 보고한다
+## 무엇이 primary인가
+
+RQ1의 primary는 **role별 표현 전이 표**다 (role마다 바뀐 셀 수와 그 원인). 아래의
+aggregate change rate는 어떤 컬럼을 role로 세느냐(예: ``read_as``만 받는 컬럼)에
+따라 크게 움직이므로 진단이다. coverage/preservation은 integrity check다.
+
+## 품질 지표는 세 가지를 따로 보고한다
 
 ``row-level``
-    H1의 primary다. 계약의 모든 컬럼을 한 spec으로 재므로 ``schema_conformance``와
-    ``parsing_failure_rate``가 레코드 단위로 나온다.
+    비교 지표. 계약의 모든 컬럼을 한 spec으로 재므로 ``schema_conformance``와
+    ``parsing_failure_rate``가 레코드 단위로 나온다. 빌더는 cast가 값을 잃으면 빌드를
+    세우므로, **성공한 빌드에서 Bronze (semantic)과 Silver는 구성상 같다** — 품질
+    향상의 증거가 될 수 없다.
 ``per-column``
     어느 컬럼이 그 숫자를 만들었는지. 진단용이다.
 ``column-macro``
@@ -41,8 +49,28 @@ predicate도, 데이터셋별 예외도 없다. 어떤 데이터셋이 나쁘게
     컬럼 구성이 데이터셋마다 달라서, 평균은 "컬럼 하나가 평균적으로 얼마나 깨끗한가"
     이지 "이 데이터셋이 얼마나 깨끗한가"가 아니다.
 
-Bronze는 **저장된 표현 그대로** 읽는다. 과제의 파서를 Bronze에 주면 "파이프라인이
-읽을 수 있는 것"을 재게 되어 Bronze가 실제보다 깨끗해 보인다.
+## Bronze를 두 번 읽는다
+
+계층을 하나 더 만드는 것이 아니다. **같은 Bronze artifact에 대한 두 개의 view**다.
+
+``Bronze (semantic)``  계약이 선언한 캐스팅을 Bronze에도 준다. ``pd.to_numeric``
+                       으로 ``"120,000"``을 실패 처리하면 H1이 아니라 우리가
+                       Bronze에 얼마나 적대적이었는가를 재게 된다.
+``Bronze (naive)``     계약의 파서를 주지 않는다. 값이 없어지는 것이 아니라
+                       ``pd.to_numeric``/``pd.to_datetime``이라는 **기본 해석**이
+                       쓰인다 — 그래서 '저장 표현 그대로'가 아니라 '계약 파서
+                       없이'가 정확한 이름이다. 계약의 해석을 받지 않은 reader에
+                       대한 **sensitivity view**이고, 데이터 품질 baseline도
+                       분석자의 준비 시간·노력의 측정도 아니다.
+
+정의를 결과를 보고 고르지 않으려면 둘 다 내놓고 질문을 다르게 붙여야 한다.
+
+## 비교 대상은 컬럼이 아니라 role이다
+
+Bronze와 Silver는 컬럼 이름도, 개수도, 존재 여부도 다르다. ``ym_raw``는 Bronze에
+없고 ``대여일자``/``대여년월`` 중 하나에서 온다. ``deal_date``는 세 조각에서
+만들어진다. 그래서 ``kpx.metrics.roles``가 계약에서 role을 세우고 두 계층을 같은
+role 집합으로 **투영**한다. 투영 후 비대칭이 남으면 선언 버그이므로 멈춘다.
 
 **harness 가상환경에서 실행한다.** 전수를 읽으므로 rent에서 3 GiB 가까이 쓴다 —
 데이터셋을 하나씩 처리하고 사이에서 해제한다.
@@ -54,73 +82,61 @@ import argparse
 import gc
 import importlib
 import sys
+from collections.abc import Sequence
 from pathlib import Path
 from typing import Any
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
+import _builder_identity  # noqa: E402
 import pandas as pd  # noqa: E402
 from _paths import DEFAULT_WORK_ROOT, SNAPSHOTS  # noqa: E402
 
 from kpx.datasets import read_artifact  # noqa: E402
+from kpx.metrics.pairing import aggregate, assert_row_identity, pair_and_classify  # noqa: E402
 from kpx.metrics.quality import (  # noqa: E402
+    H1_COMPARABLE_METRICS,
+    H1_DIAGNOSTIC_METRICS,
     TABLE2_METRICS,
     ColumnSpec,
     QualityReport,
     QualitySpec,
     measure_quality,
 )
-
-#: 계약이 선언할 수 있는 캐스팅 → 품질 지표가 기대할 타입.
-#: 선언되지 않은 것은 text다 (모듈 docstring 참조).
-CAST_KINDS: dict[str, str] = {
-    "int": "numeric",
-    "int64": "numeric",
-    "int_comma": "numeric",
-    "float": "numeric",
-    "float64": "numeric",
-    "float_comma": "numeric",
-    "date": "date",
-    "datetime": "date",
-}
+from kpx.metrics.roles import (  # noqa: E402
+    Role,
+    assert_symmetric,
+    coalesce_sources,
+    interpreter_for,
+    plan_roles,
+    project,
+)
+from kpx.pipeline import bind_measured_artifact  # noqa: E402
+from kpx.provenance import ProvenanceStore  # noqa: E402
 
 SPEC_MODULES = ("trades_spec", "rent_spec", "bike_spec")
 
 
-def column_plan(contract: dict[str, Any]) -> tuple[dict[str, str], dict[str, str], set[str]]:
-    """계약에서 ``{Bronze 이름: Silver 이름}``, ``{Silver 이름: kind}``, derived를 얻는다."""
-    rename: dict[str, str] = dict(contract.get("rename", {}))
-    casts: dict[str, str] = dict(contract.get("casts", {}))
-    derived = {str(column["name"]) for column in contract.get("derived", ())}
+def layer_spec(roles: Sequence[Role], *, interpreted: bool) -> QualitySpec:
+    """투영된 프레임을 읽는 방식 하나.
 
-    pairs = dict(rename)
-    # 캐스팅만 선언되고 이름은 그대로인 컬럼 (예: trades의 floor).
-    for name in casts:
-        if name not in derived and name not in pairs.values():
-            pairs[name] = name
-
-    kinds = {silver: CAST_KINDS.get(casts.get(silver, ""), "text") for silver in pairs.values()}
-    kinds.update({name: CAST_KINDS.get(casts.get(name, ""), "text") for name in derived})
-    return pairs, kinds, derived
-
-
-def layer_spec(
-    names: dict[str, str], kinds: dict[str, str], required: set[str], present: set[str]
-) -> QualitySpec:
-    """``{역할: 이 계층에서의 컬럼명}``을 QualitySpec으로.
-
-    ``required``는 Silver 이름으로 선언되므로 역할과 같은 축에서 읽는다.
+    두 계층이 이미 같은 role 컬럼을 갖고 있으므로 spec도 한 벌이면 된다. 차이는
+    ``interpreted`` 하나다 — 계약이 선언한 캐스팅을 값 읽기에 쓸 것인가.
     """
     return QualitySpec(
         columns=tuple(
             ColumnSpec(
-                column=column,
-                role=role,
-                kind=kinds.get(role, "text"),  # type: ignore[arg-type]
-                required=role in required,
+                column=role.name,
+                role=role.name,
+                kind=role.kind,  # type: ignore[arg-type]
+                required=role.required,
+                interpret=interpreter_for(role) if interpreted else None,
+                # naive는 계약을 전혀 모른다 — null token도 모른다. semantic에만
+                # 준다. 이것을 주지 않으면 ``\N``이 결측이 아니라 파싱 실패로
+                # 잡혀, 원천이 "비었다"고 말한 자리를 데이터 결함으로 센다.
+                null_tokens=frozenset(role.null_tokens) if interpreted else frozenset(),
             )
-            for role, column in sorted(names.items())
-            if column in present
+            for role in roles
         )
     )
 
@@ -155,17 +171,16 @@ def sample(frame: pd.DataFrame, rows: int | None) -> pd.DataFrame:
     return frame.iloc[:: max(1, len(frame) // rows)]
 
 
-def snapshot_for(dataset: str, snapshots: Path) -> Path:
-    matches = sorted(snapshots.glob(f"{dataset}/*/source/raw_records.jsonl"))
-    if len(matches) != 1:
-        raise SystemExit(f"{dataset}: 원천이 {len(matches)}개다. 하나여야 한다.")
-    return matches[0]
-
-
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--snapshots", type=Path, default=SNAPSHOTS)
     parser.add_argument("--work-root", type=Path, default=DEFAULT_WORK_ROOT)
+    parser.add_argument(
+        "--datasets",
+        type=Path,
+        default=Path(__file__).resolve().parents[1] / "datasets",
+        help="provenance 저장소 (기본: experiments/datasets)",
+    )
     parser.add_argument(
         "--rows",
         type=int,
@@ -173,9 +188,22 @@ def main(argv: list[str] | None = None) -> int:
         metavar="N",
         help="계통 표본으로 N행만 읽는다 (기본: 전수). 메모리가 모자랄 때만 쓴다.",
     )
+    parser.add_argument(
+        "--results",
+        type=Path,
+        default=Path(__file__).resolve().parents[1] / "results",
+        help="RQ1 측정 테이블을 쓸 곳 (기본: experiments/results)",
+    )
     args = parser.parse_args(argv)
 
     summary: list[dict[str, Any]] = []
+    # RQ1 전용 테이블. ResultRow는 (task, condition, seed) run 하나가 한 행이라
+    # grain이 다르다 — 이것은 run이 아니라 artifact 쌍을 재는 측정이다.
+    layer_rows: list[dict[str, Any]] = []
+    role_rows: list[dict[str, Any]] = []
+    # role × 전이 원인, 셀 단위 (primary). coalesce 원천 컬럼은 행 단위라 따로 둔다.
+    transition_rows: list[dict[str, Any]] = []
+    source_rows: list[dict[str, Any]] = []
     for module_name in SPEC_MODULES:
         try:
             spec_module = importlib.import_module(module_name)
@@ -185,16 +213,26 @@ def main(argv: list[str] | None = None) -> int:
         spec = spec_module.SPEC
         dataset, alias = spec["dataset_id"], spec["source"]["alias"]
         contract = spec["contract"]
-        required = set(contract.get("required", ()))
-        pairs, kinds, derived = column_plan(contract)
+        roles = plan_roles(contract)
 
-        silver_path = args.work_root / "runs" / f"{alias}-silver-001" / "silver" / alias
-        silver_path /= "table.parquet"
+        silver_path = args.work_root / "runs" / spec["run_id"] / "silver" / alias / "table.parquet"
         if not silver_path.exists():
             print(f"[skip] {dataset}: Silver가 없다 ({silver_path})")
             continue
 
-        source = snapshot_for(dataset, args.snapshots)
+        # 경로가 맞다고 내용이 맞는 것은 아니다. 같은 run_id에 낡은 산출물이 남아
+        # 있으면 선언은 옳고 바이트는 틀리다. 스냅샷·recipe·체크섬 세 축으로
+        # provenance에 묶는다.
+        build = bind_measured_artifact(
+            silver_path.parent,
+            spec=spec,
+            store=ProvenanceStore(args.datasets),
+            builder_version=_builder_identity.version_of(args.work_root / "runs" / spec["run_id"]),
+        )
+
+        source = args.snapshots / spec["snapshot_id"] / "source" / "raw_records.jsonl"
+        if not source.exists():
+            raise SystemExit(f"{dataset}: 선언된 스냅샷이 없다 ({source})")
         raw = pd.read_json(source, lines=True, dtype=False, convert_dates=False)
         bronze = sample(raw, args.rows)
         # 두 계층을 같은 비율로 줄인다. 한쪽만 줄이면 duplicate_rate가 표본 크기
@@ -202,66 +240,161 @@ def main(argv: list[str] | None = None) -> int:
         # 아니다.
         silver = sample(read_artifact(silver_path), args.rows)
 
-        bronze_names = {silver_name: b for b, silver_name in pairs.items()}
-        silver_names = {silver_name: silver_name for silver_name in pairs.values()}
-        b_spec = layer_spec(bronze_names, kinds, required, set(bronze.columns))
-        s_spec = layer_spec(silver_names, kinds, required, set(silver.columns))
+        # 두 계층을 같은 role 집합으로 투영한다. 컬럼이 없어서 조용히 빠지는 자리를
+        # 없애는 것이 목적이고, 남은 비대칭은 선언 버그이므로 여기서 멈춘다.
+        bronze_roles = project(bronze, roles, layer="bronze")
+        silver_roles = project(silver, roles, layer="silver")
+        assert_symmetric(bronze_roles, silver_roles, roles)
 
         print(f"\n{'=' * 78}\n{dataset}")
         print(
             f"  Bronze {len(bronze):,}행 x {bronze.shape[1]}컬럼   "
             f"Silver {len(silver):,}행 x {silver.shape[1]}컬럼   "
-            f"짝지은 컬럼 {len(b_spec.columns)}개"
-            + (f", derived {len(derived)}개" if derived else "")
+            f"role {len(roles)}개 (required {sum(r.required for r in roles)}개)"
         )
-
-        reports = {
-            "bronze": measure_quality(bronze, b_spec, layer="bronze"),
-            "silver": measure_quality(silver, s_spec, layer="silver"),
+        print(
+            f"  build {build.build_id}  {build.inputs.pipeline_version}  "
+            f"checksum {build.output_checksum[:12]}…"
+        )
+        # 두 테이블이 공유하는 anchor. bronze_naive/bronze_semantic은 빌드가 아니므로
+        # build_id가 아니라 silver_build_id다 — 이 측정이 어떤 artifact 쌍에
+        # 묶였는지를 가리킨다.
+        anchor = {
+            "silver_build_id": build.build_id,
+            "snapshot_id": spec["snapshot_id"],
+            "config_hash": build.inputs.config_hash,
+            "output_checksum": build.output_checksum,
         }
-        print("\n  -- row-level (H1 primary) --")
+
+        # 같은 투영을 두 번 읽는다. 조건이 하나 더 생긴 것이 아니라 **같은 Bronze
+        # artifact에 대한 두 개의 view**다.
+        #   semantic — 파이프라인이 실제로 쓰는 해석을 Bronze에도 준다.
+        #   naive    — 계약 파서를 주지 않는다. 값이 사라지는 것이 아니라 pandas의
+        #              기본 해석이 쓰인다. unconfigured reader sensitivity view다.
+        semantic = layer_spec(roles, interpreted=True)
+        naive = layer_spec(roles, interpreted=False)
+        reports = {
+            "bronze": measure_quality(bronze_roles, semantic, layer="bronze"),
+            "silver": measure_quality(silver_roles, semantic, layer="silver"),
+        }
+        bronze_naive = measure_quality(bronze_roles, naive, layer="bronze")
+        print("\n  -- row-level (H1 comparable) --")
+        print(
+            pd.DataFrame(
+                [
+                    {
+                        "Metric": m,
+                        "Bronze (semantic)": reports["bronze"].metric(m),
+                        "Silver": reports["silver"].metric(m),
+                        "Bronze (naive)": bronze_naive.metric(m),
+                    }
+                    for m in H1_COMPARABLE_METRICS
+                ]
+            ).to_string(index=False, na_rep="—")
+        )
+        print(
+            "     Bronze (semantic) 대 Silver는 양쪽에 같은 해석 능력을 준다. 성공한"
+            " 빌드에서는\n"
+            "     구성상 같으므로 integrity check이지 품질 향상의 증거가 아니다.\n"
+            "     Bronze (naive)는 계약 파서 없이 읽은 sensitivity view다 — 데이터 품질"
+            " baseline도\n"
+            "     분석자 노력의 측정도 아니다."
+        )
+        # 진단 지표는 한 표 안에 섞지 않는다. 나란히 찍으면 두 열을 빼는 읽기를
+        # 부르는데, duplicate_rate는 그 읽기를 지탱하지 못한다 — key 없이 전체 행으로
+        # 센다.
+        print("\n  -- row-level (diagnostic, H1 증거로 쓰지 않는다) --")
         print(
             pd.DataFrame(
                 [
                     {"Metric": m, **{k: r.metric(m) for k, r in reports.items()}}
-                    for m in TABLE2_METRICS
+                    for m in H1_DIAGNOSTIC_METRICS
                 ]
             ).to_string(index=False, na_rep="—")
         )
 
-        b_cols = per_column(bronze, b_spec)
-        s_cols = per_column(silver, s_spec)
+        b_cols = per_column(bronze_roles, semantic)
+        s_cols = per_column(silver_roles, semantic)
         print("\n  -- per-column (진단) --")
         print(
             pd.DataFrame(
                 [
                     {
-                        "Column": role,
-                        "kind": kinds.get(role, "text"),
-                        "bronze_parse_fail": b_cols[role].metric("parsing_failure_rate"),
-                        "silver_parse_fail": s_cols[role].metric("parsing_failure_rate"),
-                        "bronze_missing": b_cols[role].metric("missing_rate"),
-                        "silver_missing": s_cols[role].metric("missing_rate"),
+                        "Role": role.name,
+                        "kind": role.kind,
+                        "from": role.projection,
+                        "bronze_parse_fail": b_cols[role.name].metric("parsing_failure_rate"),
+                        "silver_parse_fail": s_cols[role.name].metric("parsing_failure_rate"),
+                        "bronze_missing": b_cols[role.name].metric("missing_rate"),
+                        "silver_missing": s_cols[role.name].metric("missing_rate"),
                     }
-                    for role in sorted(b_cols)
-                    if role in s_cols
+                    for role in roles
                 ]
             ).to_string(index=False, na_rep="—")
         )
 
-        if derived:
-            present = {name: name for name in derived}
-            d_spec = layer_spec(present, kinds, required, set(silver.columns))
-            if d_spec.columns:
-                d_report = measure_quality(silver, d_spec, layer="silver")
-                print("\n  -- derived-only (Bronze에 대응 없음, 짝 비교에서 제외) --")
-                print(
-                    f"     {sorted(derived)}: "
-                    + ", ".join(
-                        f"{m}={d_report.metric(m)}"
-                        for m in ("missing_rate", "parsing_failure_rate")
-                    )
-                )
+        # 비교 지표가 평평한 자리에서 RQ1이 실제로 보여주는 것 — 표준화가 표현을
+        # 얼마나 바꿨고, 바꾸면서 뜻을 지켰는가.
+        # 짝짓기는 위치로 한다. 길이가 같다는 것은 같은 행이라는 뜻이 아니므로,
+        # required role이 모든 행에서 같게 읽히는지 먼저 확인한다.
+        assert_row_identity(bronze_roles, silver_roles, roles)
+        pairs, transitions = pair_and_classify(bronze_roles, silver_roles, roles)
+        for pair in pairs:
+            role_rows.append({"dataset": dataset, **anchor, **pair.to_dict()})
+        for transition in transitions:
+            transition_rows.append({"dataset": dataset, **anchor, **transition})
+        # 세대마다 헤더가 달라진 것은 셀 변화가 아니다 — 투영 전 Bronze에서 행 단위로 센다.
+        sources = coalesce_sources(bronze, roles)
+        for source in sources:
+            source_rows.append({"dataset": dataset, **anchor, **source})
+        for view, report in (
+            ("bronze_naive", bronze_naive),
+            ("bronze_semantic", reports["bronze"]),
+            ("silver", reports["silver"]),
+        ):
+            layer_rows.append(
+                {
+                    "dataset": dataset,
+                    **anchor,
+                    "view": view,
+                    "roles": len(roles),
+                    "required": sum(role.required for role in roles),
+                    "rows": report.rows,
+                    **{metric: report.metric(metric) for metric in TABLE2_METRICS},
+                }
+            )
+
+        print("\n  -- 표준화가 한 일: role별 전이 원인, 셀 단위 (RQ1 primary) --")
+        causes = pd.DataFrame(transitions)
+        print(
+            causes[causes["category"] != "unchanged"][
+                ["role", "structural", "category", "cells"]
+            ].to_string(index=False)
+        )
+        print(
+            "     원인은 결과를 보기 전에 고정한 규칙으로 붙인다 (pair_and_classify)."
+            " unchanged는 생략했다.\n"
+            "     structural(rename/coalesce/derived)은 컬럼의 전이이고 셀 원인이 아니다."
+        )
+        if sources:
+            print("\n  -- coalesce: 어느 원천 컬럼이 값을 댔는가, 행 단위 (셀 분모와 별도) --")
+            print(pd.DataFrame(sources).to_string(index=False))
+        print("\n  -- aggregate (진단: role 정의에 민감하다) --")
+        print(
+            pd.DataFrame([aggregate(pairs), aggregate(pairs, required_only=True)]).to_string(
+                index=False, na_rep="—"
+            )
+        )
+        print(
+            "     aggregate는 어떤 컬럼을 role로 세느냐에 따라 크게 움직인다 (read_as만"
+            " 받는 컬럼을\n"
+            "     넣으면 trades 0.238 -> 0.450). 원천의 성질이 아니라 이 계약·role 정의"
+            " 아래의 값이다.\n"
+            "     분석자의 노력도 아니다 — 그 비용은 RQ2가 따로 잰다. coverage와"
+            " preservation은\n"
+            "     integrity check다 (required role의 preservation은 row identity guard로"
+            " 1.0이 전제된다)."
+        )
 
         b_macro, s_macro = macro(b_cols), macro(s_cols)
         print("\n  -- column-macro (diagnostic, H1 primary 아님) --")
@@ -274,29 +407,47 @@ def main(argv: list[str] | None = None) -> int:
             )
         )
 
+        # 요약도 H1_COMPARABLE_METRICS에서 만든다. 여기에 지표를 손으로 적어 두면
+        # 비교 지표를 고쳐도 최종 표에서 다시 깨진다 — 실제로 한 번 깨졌다.
         row: dict[str, Any] = {
             "Dataset": dataset,
-            "Columns": len(b_spec.columns),
-            "Required": len(b_spec.required),
+            "Roles": len(roles),
+            "Required": sum(role.required for role in roles),
         }
-        for metric in ("parsing_failure_rate", "type_consistency", "schema_conformance"):
+        for metric in H1_COMPARABLE_METRICS:
             before, after = reports["bronze"].metric(metric), reports["silver"].metric(metric)
             row[metric] = "—" if before is None or after is None else f"{before:.3f} -> {after:.3f}"
         summary.append(row)
 
         # raw까지 놓아야 한다 — 표본을 안 뜨면 bronze가 raw와 같은 객체라,
         # bronze만 지우면 참조가 남아 다음 데이터셋에서 메모리가 겹친다.
-        del raw, bronze, silver, b_cols, s_cols, reports
+        del raw, bronze, silver, bronze_roles, silver_roles, b_cols, s_cols, reports, pairs
         gc.collect()
 
     print()
     print("=" * 78)
-    print("정형화 수준 스펙트럼 — row-level (H1 primary)")
+    print("정형화 수준 스펙트럼 — Bronze (semantic) -> Silver, 비교 지표 (integrity check)")
     print()
     print(pd.DataFrame(summary).to_string(index=False))
     print()
-    print("컬럼은 각 데이터셋의 Silver 계약에서 유도했다. 손으로 고른 것이 없다.")
+    print("role은 각 데이터셋의 Silver 계약에서 유도했다. 손으로 고른 것이 없다.")
     print("required는 docs/required-columns.md의 규칙(식별자 + 시점 + 주된 사실)을 따른다.")
+    print("양쪽에 같은 해석 능력을 준 비교다 — Bronze를 계약 파서 없이 읽은 값은")
+    print("데이터셋별 상세표의 Bronze (naive) 열에 있다.")
+
+    # 표는 화면에서 사라진다. 표/그림을 만드는 쪽이 이 측정을 다시 돌리지 않도록,
+    # rate와 함께 **count를 저장한다** — role마다 유효 값 수가 달라서 rate의 단순
+    # 평균은 또 하나의 macro-average가 된다.
+    args.results.mkdir(parents=True, exist_ok=True)
+    for name, rows in (
+        ("rq1_layer_quality", layer_rows),
+        ("rq1_role_pair", role_rows),
+        ("rq1_role_transition", transition_rows),
+        ("rq1_coalesce_source", source_rows),
+    ):
+        path = args.results / f"{name}.parquet"
+        pd.DataFrame(rows).to_parquet(path, index=False)
+        print(f"{name}: {len(rows)}행 -> {path}")
     return 0
 
 

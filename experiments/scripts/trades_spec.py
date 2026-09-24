@@ -21,6 +21,11 @@ SPEC: dict[str, Any] = {
     "dataset_id": DATASET_ID,
     "title": "Seoul Apartment Trades",
     "source": {"kind": "file", "alias": ALIAS, "format": "jsonl"},
+    # 논문의 숫자를 만드는 빌드. 이름 규칙으로 추측하지 않는다 — 같은 dataset_id
+    # 아래 폐기한 스냅샷이 남아 있을 수 있고, 어느 것을 쟀는지는 추측이 아니라
+    # 선언이어야 한다. recipe에는 들어가지 않는다(RUN_SCOPED_KEYS).
+    "snapshot_id": "seoul-apartment-trades/20260922-6660c8e25162",
+    "run_id": "trades-silver-001",
     "contract": {
         # 행정구역·지번 코드는 식별자지 수량이 아니다. 원천 API가 JSON 정수로
         # 내보내기 때문에 선언하지 않으면 타입 추론에 맡겨지고, null이 섞인 코드는

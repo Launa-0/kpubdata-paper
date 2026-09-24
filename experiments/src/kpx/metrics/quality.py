@@ -1,8 +1,15 @@
-"""Data quality for RQ1/H1: what standardization actually improves.
+r"""Data-quality metrics for RQ1, applied unchanged to Bronze and Silver.
 
-H1 predicts that Silver improves type consistency, code validity and schema
-conformance over Bronze, and reduces missing values, duplicates and parsing
-failures. Six metrics, one interface applied unchanged to both layers.
+Six metrics — type consistency, code validity, schema conformance, missing
+values, duplicates and parsing failures — through one interface for both layers.
+In RQ1 they are an **integrity check**, not the finding: the builder refuses a
+build whose declared casts lose values, so once Bronze is read with the
+contract's own parsers a successful build cannot differ from its Silver on the
+comparable metrics. What standardization changed is measured cell by cell in
+:mod:`kpx.metrics.pairing`. (The original hypothesis — that Silver *improves*
+these metrics — and why it was retired are recorded in
+``docs/experiment-design-revisions.md``.) The ``H1_*`` names below are kept
+because the stored result schema uses them.
 
 The hard part is not computing rates. It is making sure the rates compare the
 same thing, because Bronze and Silver do not even use the same column names —
@@ -11,15 +18,16 @@ Bronze has ``거래금액`` holding ``"120,000"``, Silver has ``price_krw`` hold
 column plays which role and how a value in it is to be read. Everything else is
 computed identically for both.
 
-Two ways this measurement could manufacture H1, and what stops each
----------------------------------------------------------------------
+Two ways this measurement could manufacture a layer difference, and what stops each
+-----------------------------------------------------------------------------------
 
 **Reading Bronze naively.** ``pd.to_numeric("120,000")`` fails, and if that
-counted as a parsing failure, H1 would be measuring how hostile we chose to be
+counted as a parsing failure, the comparison would measure how hostile we chose to be
 to Bronze rather than anything about the data. So a Bronze spec passes the same
-interpretation functions the Silver *build* uses — the task's ``transforms``
-helpers — and Bronze is credited with every value those can read. What remains
-a failure is a value that the pipeline itself could not parse.
+interpretation the Silver *build* declares — ``kpx.metrics.roles.INTERPRETERS``,
+keyed by the cast in the contract — and Bronze is credited with every value the
+build could read. What remains a failure is a value the pipeline could not parse
+either.
 
 **Improving a rate by dropping rows.** A Silver build that deletes rows with
 nulls reports a better missing rate for a reason that has nothing to do with
@@ -44,6 +52,31 @@ The metrics
 ``parsing_failure_rate``   records with at least one present-but-unreadable
                            required value
 =========================  ====================================================
+
+Comparable and diagnostic
+-------------------------
+
+All six are measured and all six are stored. They are not all comparable.
+
+A metric is **comparable** when a :class:`QualitySpec` states the same role on
+both sides, so the two layers measure the same construct even though Bronze
+calls it ``대여소번호`` and Silver calls it ``station_code``. Those carry the
+layer-to-layer comparison.
+
+``duplicate_rate`` is **diagnostic**, for a subtler reason. Given role-projected
+frames it is computed over the same roles on both sides, so the comparison space
+is no longer the problem. What remains is that it compares *stored values*:
+without a key it is exact-row equality over the frame, not over what
+``ColumnSpec.interpret`` made of it. Two records that mean the same thing but
+spell a missing gender ``\N`` in one row and ``""`` in the other are unequal in
+Bronze and equal in Silver, so canonicalization **raises** the rate by removing
+the difference that kept them apart.
+
+A rise is therefore not a regression and a fall is not an improvement; both are
+questions. The number stays in the result schema because it is a real
+observation that found real things — every change examined so far was the
+source's own duplicates becoming visible — but each one is settled by tracing
+the record pairs behind it, not by subtracting two layers.
 
 Missing and unreadable are counted separately throughout: an absent value and a
 corrupt one are different defects, and collapsing them would let a layer trade
@@ -74,14 +107,27 @@ HIGHER_IS_BETTER: frozenset[str] = frozenset(
     {"type_consistency", "schema_conformance", "code_validity"}
 )
 
-TABLE2_METRICS: tuple[str, ...] = (
+#: The layer-to-layer comparison. Each one is stated as a role that both layers
+#: fill, so the two sides measure the same construct under different column
+#: names. ``code_validity`` belongs here whenever a reference code list exists;
+#: where none does it is simply ``None`` and drops out of the table.
+H1_COMPARABLE_METRICS: tuple[str, ...] = (
     "type_consistency",
     "missing_rate",
-    "duplicate_rate",
     "schema_conformance",
     "code_validity",
     "parsing_failure_rate",
 )
+
+#: Measured and stored, but not a layer comparison on its own. See the module
+#: docstring: it compares stored values rather than interpreted ones, so a
+#: delta here is something to explain rather than something that settles
+#: anything.
+H1_DIAGNOSTIC_METRICS: tuple[str, ...] = ("duplicate_rate",)
+
+#: Everything a :class:`QualityReport` can answer for. The result schema keeps
+#: all of it — separating presentation from storage is the point.
+TABLE2_METRICS: tuple[str, ...] = H1_COMPARABLE_METRICS + H1_DIAGNOSTIC_METRICS
 
 
 class QualityError(ValueError):
@@ -90,14 +136,19 @@ class QualityError(ValueError):
 
 @dataclass(frozen=True)
 class ColumnSpec:
-    """One column of one layer, and how to read it.
+    r"""One column of one layer, and how to read it.
 
     ``interpret`` turns a stored value into its canonical form and returns
     ``None`` — or raises — when it cannot. A Bronze spec should pass the task's
     own parser here rather than leave it to the default, so that Bronze is
     credited with everything the pipeline can actually read.
 
-    ``minimum`` is an **exclusive** lower bound, because the bounds H1 cares
+    ``null_tokens`` are the stored spellings of absence the contract declares
+    (``\N`` and the like). They are read as missing rather than unreadable —
+    the source said those cells are empty, and counting them as corrupt would
+    blame the data for what the reader was not told.
+
+    ``minimum`` is an **exclusive** lower bound, because the bounds RQ1 cares
     about are ``price > 0`` and ``area > 0``.
     """
 
@@ -108,6 +159,7 @@ class ColumnSpec:
     minimum: float | None = None
     predicate: Callable[[Any], bool] | None = None
     required: bool = True
+    null_tokens: frozenset[str] = frozenset()
 
 
 @dataclass(frozen=True)
@@ -147,7 +199,7 @@ class QualitySpec:
 
 @dataclass(frozen=True)
 class QualityReport:
-    """H1's six metrics for one layer, plus what they were measured over.
+    """The six metrics for one layer, plus what they were measured over.
 
     ``rows`` is part of the report rather than a footnote: a missing rate is
     only comparable across layers alongside the number of rows it was computed
@@ -180,7 +232,7 @@ class QualityReport:
 
 
 def measure_quality(frame: pd.DataFrame, spec: QualitySpec, *, layer: Layer) -> QualityReport:
-    """Measure H1's six metrics over one layer's frame."""
+    """Measure the six metrics over one layer's frame."""
     if frame.empty:
         raise QualityError(
             "cannot measure the quality of an empty frame; every rate would be "
@@ -211,6 +263,15 @@ def duplicate_rate(frame: pd.DataFrame, key: tuple[str, ...] = ()) -> float:
     reading: two trades that agree on every recorded field may still be two
     genuine trades, so the number is reported as *duplicate records*, never
     silently deduplicated.
+
+    This is a **diagnostic** metric, not a paired one. Bronze and Silver do not
+    hold the same columns — Silver may coalesce aliases away or add derived
+    fields — so a whole-row rate is not computed against the same yardstick on
+    both sides, and narrowing the columns can raise it on its own. Read a change
+    in this number by inspecting the record pairs behind it, never from the
+    aggregate alone. Every such change observed so far turned out to be
+    canonicalization exposing duplicates the source already held, but that is a
+    finding each time, not something the rate says by itself.
     """
     if frame.empty:
         raise QualityError("cannot measure duplicates in an empty frame")
@@ -228,6 +289,10 @@ def table2(reports: Mapping[Layer, QualityReport], *, baseline: Layer = "bronze"
 
     The row counts are printed as the first row, so a missing rate improved by
     dropping rows is visible in the same glance as the improvement.
+
+    Only :data:`H1_COMPARABLE_METRICS` appear here. ``duplicate_rate`` is
+    reported by :func:`table2_diagnostics`, which prints no improvement column
+    at all — a signed delta is exactly the reading that metric cannot support.
     """
     if baseline not in reports:
         raise QualityError(f"no report for the baseline layer {baseline!r}")
@@ -236,7 +301,7 @@ def table2(reports: Mapping[Layer, QualityReport], *, baseline: Layer = "bronze"
     rows: list[dict[str, Any]] = [
         {"Metric": "rows"} | {str(layer): float(reports[layer].rows) for layer in layers}
     ]
-    for name in TABLE2_METRICS:
+    for name in H1_COMPARABLE_METRICS:
         values: dict[str, Any] = {str(layer): reports[layer].metric(name) for layer in layers}
         if all(value is None for value in values.values()):
             continue
@@ -252,17 +317,41 @@ def table2(reports: Mapping[Layer, QualityReport], *, baseline: Layer = "bronze"
     return frame
 
 
-def figure3_data(reports: Mapping[Layer, QualityReport]) -> pd.DataFrame:
+def table2_diagnostics(reports: Mapping[Layer, QualityReport]) -> pd.DataFrame:
+    """The diagnostic metrics, per layer, with no improvement column.
+
+    Separate from :func:`table2` because printing them side by side under one
+    heading is what invites "duplicates improved by X" — the one reading the
+    measurement does not support. The values are here in full; only the
+    invitation to subtract them is gone.
+    """
+    layers = list(reports)
+    rows = [
+        {"Metric": name} | {str(layer): reports[layer].metric(name) for layer in layers}
+        for name in H1_DIAGNOSTIC_METRICS
+    ]
+    return pd.DataFrame([row for row in rows if any(v is not None for v in list(row.values())[1:])])
+
+
+def figure3_data(
+    reports: Mapping[Layer, QualityReport],
+    *,
+    metrics: tuple[str, ...] = H1_COMPARABLE_METRICS,
+) -> pd.DataFrame:
     """Tidy ``(metric, layer, value)`` rows for Figure 3 (Quality Improvement).
 
     Long rather than wide because every plotting library wants it that way, and
     because a metric that a layer does not report is simply absent instead of
     becoming a null that has to be explained.
+
+    Defaults to the comparable metrics. A figure puts bars next to each other
+    and the reader compares them, so a diagnostic metric plotted there makes a
+    claim the caller never wrote. Pass ``metrics`` to plot one deliberately.
     """
     rows = [
         {"metric": name, "layer": layer, "value": value}
         for layer, report in reports.items()
-        for name in TABLE2_METRICS
+        for name in metrics
         if (value := report.metric(name)) is not None
     ]
     return pd.DataFrame(rows, columns=["metric", "layer", "value"])
@@ -285,6 +374,12 @@ def _read(frame: pd.DataFrame, spec: ColumnSpec) -> _Reading:
     """Apply a column's interpretation, keeping absent and corrupt apart."""
     raw = frame[spec.column]
     missing = raw.isna().to_numpy()
+    if spec.null_tokens:
+        # The contract declares what absence looks like in this source. A reader
+        # that does not know ``\N`` calls it a corrupt value, which is the same
+        # hostility as not knowing that ``120,000`` is a number: it counts the
+        # reader's ignorance as the data's defect.
+        missing = missing | raw.isin(spec.null_tokens).to_numpy()
     interpreted = _interpret(raw, spec)
     unreadable = interpreted.isna().to_numpy() & ~missing
     return _Reading(spec=spec, missing=missing, unreadable=unreadable, values=interpreted)
