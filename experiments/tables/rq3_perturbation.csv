@@ -1,0 +1,5 @@
+contract_class,mutations,rejected,silent_pass
+declared_or_covered,12,12,0
+undeclared_but_expressible,5,0,5
+not_expressible,3,0,3
+total,20,12,8

@@ -12,6 +12,8 @@ import pytest
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "scripts"))
 
+import pandas as pd  # noqa: E402
+import paper_tables  # noqa: E402
 import perturbation  # noqa: E402
 import r2_report  # noqa: E402
 import storage_footprint  # noqa: E402
@@ -105,3 +107,27 @@ class TestStorageControl:
     def test_a_broken_control_is_refused(self, override: dict[str, object]) -> None:
         footers = {("a", "bronze"): self._footer(), ("a", "silver"): self._footer(**override)}
         assert storage_footprint.check_controlled(footers)
+
+
+class TestPaperTables:
+    def _breaks(self, silent: set[str]) -> pd.DataFrame:
+        ids = [f"T-B{i:02d}" for i in range(1, 11)] + [f"B-B{i:02d}" for i in range(1, 11)]
+        return pd.DataFrame(
+            {
+                "mutation": ids,
+                "kind": "B",
+                "verdict": ["false_accept" if m in silent else "correct_reject" for m in ids],
+            }
+        )
+
+    def test_silent_passes_are_split_into_the_two_contract_classes(self) -> None:
+        breaks = paper_tables.classify_breaks(self._breaks(set(paper_tables.SILENT_PASS)))
+        table = paper_tables.rq3_perturbation(breaks).set_index("contract_class")
+        assert table.loc["total", "rejected"] == 12
+        assert table.loc["undeclared_but_expressible", "silent_pass"] == 5
+        assert table.loc["not_expressible", "silent_pass"] == 3
+
+    def test_a_different_silent_set_is_refused(self) -> None:
+        silent = set(paper_tables.SILENT_PASS) - {"B-B07"} | {"T-B09"}
+        with pytest.raises(SystemExit, match="분류표"):
+            paper_tables.classify_breaks(self._breaks(silent))

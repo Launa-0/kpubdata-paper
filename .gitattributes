@@ -1,0 +1,8 @@
+# 결과·표의 바이트를 manifest가 기록한 커밋 바이트와 같게 유지한다 (core.autocrlf와 무관하게).
+experiments/results/*.csv text eol=lf
+experiments/results/*.json text eol=lf
+experiments/results/*.parquet binary
+experiments/tables/*.csv text eol=lf
+experiments/tables/*.md text eol=lf
+experiments/figures/*.svg text eol=lf
+experiments/figures/*.png binary
