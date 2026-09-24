@@ -1,22 +1,23 @@
-"""Driving one condition of one task, and recording what it cost (#13).
+"""Driving one condition of one task, and recording what it produced (#13).
 
-Every measurement this harness makes already existed — the runner contract, the
-step recorder, code metrics, the runtime protocol, the result schema. What was
-missing was the path that drives them in one order, so that a run is a single
-call and every result row is produced the same way.
+The runner contract, the step recorder, code metrics and the result schema each
+exist on their own. This is the path that drives them in one order, so that a
+run is a single call and every result row is produced the same way.
 
 The order matters and is fixed here rather than per task:
 
-1. ``prepare`` runs under the runtime protocol (warm-up, then measured runs),
-   with a fresh step recorder each time so repeats do not accumulate steps.
+1. ``prepare`` runs once with a step recorder.
 2. The task's shared analysis runs on the prepared input, unchanged across
    conditions — that is what makes a difference in the result attributable to
    preparation (Internal Validity).
-3. Code metrics are read from the runner's source, with the recorded step count
-   from the final measured run.
+3. Code metrics are read from the runner's source, with the recorded step count.
 4. One :class:`~kpx.results.ResultRow` is assembled, taking ``source_snapshot``
    and ``pipeline_version`` from the build the run read and everything else from
    the run itself (see :meth:`kpx.provenance.Provenance.run_fields`).
+
+Execution time is not measured here. A task-run condition reads layers stored
+in different formats, so its wall time would compare formats rather than
+strategies; the timing protocol lives in ``scripts/_timing.py``.
 """
 
 from __future__ import annotations
@@ -28,20 +29,12 @@ from typing import Any
 
 from kpx.contract import AnalysisInput, AnalysisOutput, Condition, DatasetResolver, RunContext
 from kpx.metrics.code_metrics import measure_preparation
-from kpx.metrics.runtime import MEASURED_RUNS, WARMUP_RUNS, measure
 from kpx.results import ResultRow, output_digest
 from kpx.steps import StepRecorder
 
-#: Correctness metrics a task may report, mapped onto result schema fields.
+#: Task diagnostics a task may report, mapped onto result schema fields.
 #: A task that reports something else is not silently dropped — see ``_metrics``.
-METRIC_FIELDS: tuple[str, ...] = (
-    "mae",
-    "rmse",
-    "join_matching_rate",
-    "missing_rate",
-    "duplicate_rate",
-    "schema_validity",
-)
+METRIC_FIELDS: tuple[str, ...] = ("join_matching_rate",)
 
 
 @dataclass(frozen=True)
@@ -75,8 +68,6 @@ def run_condition(
     snapshot_id: str,
     pipeline_version: str,
     seed: int = 0,
-    warmup: int = WARMUP_RUNS,
-    repeat: int = MEASURED_RUNS,
 ) -> ResultRow:
     """Run one condition of ``task`` and return the row describing it.
 
@@ -88,27 +79,21 @@ def run_condition(
     runner = task.runners[condition]
     run_id = run_id_for(task.name, condition, seed)
 
-    recorders: list[StepRecorder] = []
-
-    def once() -> tuple[AnalysisInput, AnalysisOutput]:
-        recorder = StepRecorder()
-        recorders.append(recorder)
-        context = RunContext(
-            task=task.name,
-            condition=condition,
-            run_id=run_id,
-            snapshot_id=snapshot_id,
-            pipeline_version=pipeline_version,
-            datasets=datasets,
-            seed=seed,
-            params=task.params,
-            recorder=recorder,
-        )
-        prepared = runner.prepare(context)
-        return prepared, task.analyze(prepared)
-
+    recorder = StepRecorder()
+    context = RunContext(
+        task=task.name,
+        condition=condition,
+        run_id=run_id,
+        snapshot_id=snapshot_id,
+        pipeline_version=pipeline_version,
+        datasets=datasets,
+        seed=seed,
+        params=task.params,
+        recorder=recorder,
+    )
     try:
-        measurement = measure(once, warmup=warmup, repeat=repeat)
+        prepared = runner.prepare(context)
+        output = task.analyze(prepared)
     except Exception:
         return ResultRow(
             run_id=run_id,
@@ -121,12 +106,7 @@ def run_condition(
             status="failed",
         )
 
-    prepared, output = measurement.result
-    code = measure_preparation(
-        runner,
-        transforms=task.transforms,
-        steps=recorders[-1].step_count if recorders else None,
-    )
+    code = measure_preparation(runner, transforms=task.transforms, steps=recorder.step_count)
 
     return ResultRow(
         run_id=run_id,
@@ -138,8 +118,6 @@ def run_condition(
         seed=seed,
         status="ok",
         rows=len(prepared.frame),
-        runtime_seconds=measurement.median,
-        peak_memory_mb=measurement.peak_memory_mb,
         preprocessing_loc=code.preprocessing_loc,
         function_count=code.function_count,
         transformation_steps=code.transformation_steps,
@@ -149,11 +127,11 @@ def run_condition(
 
 
 def _metrics(prepared: AnalysisInput, output: AnalysisOutput) -> dict[str, float]:
-    """The run's correctness numbers, keyed by result schema field.
+    """The run's task diagnostics, keyed by result schema field.
 
     Two sources, because two different things are being measured.
 
-    Some correctness numbers are properties of *preparation* rather than of the
+    Some diagnostics are properties of *preparation* rather than of the
     analysis — Task 3's ``join_matching_rate`` is the clearest case: how many
     sale keys found a jeonse counterpart is decided before the analysis runs.
     Those arrive in ``AnalysisInput.notes``. The analysis must not read notes

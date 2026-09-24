@@ -69,6 +69,7 @@ desktop.ini
 !experiments/results/*.parquet
 !experiments/results/*.csv
 !experiments/figures/*
+!experiments/tables/*.csv
 # 스냅샷은 metadata.json만 커밋하고 원본 바이트는 별도 공개한다.
 experiments/snapshots/*/*/source/
 !experiments/snapshots/**/metadata.json

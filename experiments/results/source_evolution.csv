@@ -1,0 +1,7 @@
+generation,snapshot_id,rows_in,status,failed_stage,error,rows_out,config_hash,builder,paper_sha
+G1,seoul-bike-rent-month-g1/20260923-e91d2c485eaf,327231,ok,,,327231,f9f6813c911053eb11f31ce662b737729a48efa5baac8de65ba539e044432c22,0.4.0.dev0+096d023f9546,4fcca24e0506aaaa9bd018c58542ce8a84a348b4
+G2,seoul-bike-rent-month-g2/20260923-ba6abb36ac55,3200206,ok,,,3200206,f9f6813c911053eb11f31ce662b737729a48efa5baac8de65ba539e044432c22,0.4.0.dev0+096d023f9546,4fcca24e0506aaaa9bd018c58542ce8a84a348b4
+I1,seoul-bike-rent-month-i1/20260923-073f1cc75897,128413,ok,,,128413,f9f6813c911053eb11f31ce662b737729a48efa5baac8de65ba539e044432c22,0.4.0.dev0+096d023f9546,4fcca24e0506aaaa9bd018c58542ce8a84a348b4
+G3,seoul-bike-rent-month-g3/20260923-43082467e187,1246386,ok,,,1246386,f9f6813c911053eb11f31ce662b737729a48efa5baac8de65ba539e044432c22,0.4.0.dev0+096d023f9546,4fcca24e0506aaaa9bd018c58542ce8a84a348b4
+G4,seoul-bike-rent-month-g4/20260923-1e55bf10ac1d,32786,failed,silver/coalesce,"pipeline failed for source 'bike' || source pipeline failed for 'bike': coalesce target 'ym_raw' found none of its candidates in the source: ['대여일자', '대여년월'] | TabularError: coalesce target 'ym_raw' found none of its candidates in the source: ['대여일자', '대여년월']",0,f9f6813c911053eb11f31ce662b737729a48efa5baac8de65ba539e044432c22,0.4.0.dev0+096d023f9546,4fcca24e0506aaaa9bd018c58542ce8a84a348b4
+G1+G2+I1+G3,seoul-bike-rent-month/20260923-637ec21bb5b1,4902236,ok,,,4902236,f9f6813c911053eb11f31ce662b737729a48efa5baac8de65ba539e044432c22,0.4.0.dev0+096d023f9546,4fcca24e0506aaaa9bd018c58542ce8a84a348b4

@@ -1,4 +1,7 @@
-"""Task 1을 네 조건으로 실행하고 표 1·3의 숫자를 만든다 (#13, #23).
+"""Task 1을 네 조건으로 실행한다 — 준비 코드 규모(RQ2)와 결과 동등성 gate (#13).
+
+실행 비용은 여기서 재지 않는다. 네 조건은 서로 다른 형식의 계층을 읽으므로 그 시간은
+전략이 아니라 형식을 비교한다 — timing은 ``_timing.py``가 같은 Parquet 입력으로 잰다.
 
 Gold 계층은 여기서 만든다 — builder의 Gold 단계는 split/join/packaging을 하고 집계는
 하지 않으므로, 과제별 집계는 실험이 정의한 단계다. 이 차이는 Threats에 기록한다.
@@ -22,8 +25,6 @@ from _paths import DEFAULT_WORK_ROOT, SNAPSHOTS, snapshot_source  # noqa: E402
 from trades_spec import SPEC  # noqa: E402
 
 from kpx.datasets import LayerStore  # noqa: E402
-from kpx.metrics.breakeven import break_even  # noqa: E402
-from kpx.metrics.runtime import MEASURED_RUNS, WARMUP_RUNS  # noqa: E402
 from kpx.pipeline import (  # noqa: E402
     assert_same_inputs,
     bind_measured_artifact,
@@ -94,10 +95,6 @@ def main(argv: list[str] | None = None) -> int:
         default=None,
         help="provenance 저장소 (기본: experiments/datasets)",
     )
-    # 반복 횟수는 harness가 정한 측정 규약을 따른다 (warm-up 1 + 측정 5).
-    # 스크립트가 제 값을 갖고 있으면 규약이 두 곳에 생기고, 둘이 갈린다.
-    parser.add_argument("--warmup", type=int, default=WARMUP_RUNS)
-    parser.add_argument("--repeat", type=int, default=MEASURED_RUNS)
     parser.add_argument(
         "--results",
         type=Path,
@@ -114,7 +111,7 @@ def main(argv: list[str] | None = None) -> int:
 
     silver = args.work_root / "runs" / args.run_id / "silver" / "trades" / "table.parquet"
     # Gold는 과제별 디렉터리에 둔다. provenance가 디렉터리를 통째로 digest하므로,
-    # 공용 폴더에 두면 T2~T4의 Gold가 생길 때 Task 1의 checksum이 남의 파일 때문에
+    # 공용 폴더에 두면 다른 과제(T3)의 Gold가 생길 때 Task 1의 checksum이 남의 파일 때문에
     # 움직인다 — 행 수와 컬럼은 그대로인 채로.
     gold_dir = args.work_root / "gold" / "task01"
     gold = gold_dir / "trades_district_month.parquet"
@@ -140,9 +137,8 @@ def main(argv: list[str] | None = None) -> int:
 
     # Gold는 매번 다시 만든다. 기존 파일을 mtime만 보고 재사용하면, Gold를 만드는
     # 코드(``gold_recipe``)가 바뀌었는데 Silver는 그대로일 때 옛 바이트가 새 recipe로
-    # 기록된다 — provenance가 본 적 없는 바이트를 서술하게 된다. 빌드는 1초 남짓이고,
-    # 그 비용은 손익분기 계산에도 필요하다.
-    gold_build_seconds = build_gold(silver, gold)
+    # 기록된다 — provenance가 본 적 없는 바이트를 서술하게 된다.
+    build_gold(silver, gold)
 
     materialized = pd.read_parquet(gold)
     gold_build = record_derived_layer(
@@ -193,8 +189,6 @@ def main(argv: list[str] | None = None) -> int:
             datasets=store,
             snapshot_id=inherited["source_snapshot"],
             pipeline_version=inherited["pipeline_version"],
-            warmup=args.warmup,
-            repeat=args.repeat,
         )
         rows.append(row)
         results.append(row)
@@ -204,8 +198,8 @@ def main(argv: list[str] | None = None) -> int:
             print(f"  status={row.status}  (측정값 없음)")
             continue
         print(
-            f"  status={row.status} rows={row.rows} runtime={row.runtime_seconds:.2f}s "
-            f"peak={row.peak_memory_mb:.0f}MB loc={row.preprocessing_loc} "
+            f"  status={row.status} rows={row.rows} "
+            f"loc={row.preprocessing_loc} functions={row.function_count} "
             f"steps={row.transformation_steps}"
         )
         print(f"  output_hash={row.output_hash[:16]}…")
@@ -218,9 +212,9 @@ def main(argv: list[str] | None = None) -> int:
         print(f"\n[!] 실패한 조건: {failed}")
 
     # primary와 diagnostic을 한 표에 섞어 찍으면 읽는 사람이 무엇으로 논증하는지
-    # 알 수 없다. 조건 간 비교의 근거는 왼쪽 넷이고, Instrumented stages는
+    # 알 수 없다. 조건 간 비교의 근거는 이 둘이고, Instrumented stages는
     # 선언된 값이라 비교에 쓰지 않는다 (docs/code-metrics.md).
-    print("\n=== 표 3: Analytical Effort (RQ2) — primary ===")
+    print("\n=== 준비 코드 규모 (RQ2) — primary ===")
     print(
         pd.DataFrame(
             [
@@ -228,8 +222,6 @@ def main(argv: list[str] | None = None) -> int:
                     "Condition": row.condition,
                     "Preprocessing LOC": row.preprocessing_loc,
                     "Transformation functions": row.function_count,
-                    "Runtime (s)": round(row.runtime_seconds, 2),
-                    "Peak memory (MB)": round(row.peak_memory_mb, 0),
                 }
                 for row in measured
             ]
@@ -250,16 +242,16 @@ def main(argv: list[str] | None = None) -> int:
     )
 
     # 네 조건이 같은 해시에 도달하지만, 그 일치가 모두 같은 무게를 갖지는 않는다.
-    # Gold 파일은 silver 조건이 계산하는 것과 같은 집계 함수로 만들어지므로
-    # gold ≡ silver는 구조상 참이다 — 검증이 아니라 materialization 일관성 확인이다.
-    # 독립적으로 도달한 것은 bronze와 monolithic 둘뿐이다.
+    # 독립 검증은 bronze ↔ silver 하나다 — harness 파서와 builder cast라는 서로 다른
+    # 구현이 같은 값에 도달했다. gold는 silver 조건과 같은 집계 함수로 만들어지고,
+    # monolithic은 bronze와 같은 helper를 같은 순서로 부르므로 둘은 구성상 동등하다.
     KIND = {
-        "bronze": "semantic equivalence (독립)",
-        "monolithic": "baseline equivalence (독립)",
-        "gold": "materialization consistency (항등)",
         "silver": "reference",
+        "bronze": "독립 (harness 파서 vs builder cast)",
+        "monolithic": "구성상 bronze와 같은 helper·순서",
+        "gold": "구성상 silver와 같은 함수 (materialization 일관성)",
     }
-    print("\n=== Silver 대비 결과 일치 (RQ3) ===")
+    print("\n=== Silver 대비 결과 일치 (equivalence gate) ===")
     digests = {row.condition: row.output_hash for row in measured}
     reference = digests.get("silver")
     print(
@@ -275,27 +267,6 @@ def main(argv: list[str] | None = None) -> int:
             ]
         ).to_string(index=False)
     )
-
-    # 저장 trade-off는 kpx.metrics.storage가 빌드 기록에서 계산한다 (#19, PR #53).
-    # 여기서 파일 크기를 따로 재면 같은 값을 두 곳에서 구하게 되고, 둘이 갈린다.
-
-    # Gold의 준비 비용이 낮은 것은 그 비용이 사라져서가 아니라 상류 빌드로 옮겨갔기
-    # 때문이다. 낮은 숫자만 보고하면 trade-off의 절반만 적는 셈이다.
-    per_analysis = {row.condition: row.runtime_seconds for row in measured}
-    if {"silver", "gold"} <= per_analysis.keys():
-        report = break_even(
-            build_cost=gold_build_seconds,
-            baseline_per_analysis=per_analysis["silver"],
-            derived_per_analysis=per_analysis["gold"],
-        )
-        print("\n=== Gold materialization의 손익분기 (#19 Discussion) ===")
-        print(f"  Gold 빌드 비용        : {report.build_cost:.2f}s (1회)")
-        print(f"  분석 1회당 Silver     : {report.baseline_per_analysis:.2f}s")
-        print(f"  분석 1회당 Gold       : {report.derived_per_analysis:.2f}s")
-        print(f"  분석 1회당 절감       : {report.saving_per_analysis:.2f}s")
-        print(f"  손익분기              : {report.analyses_to_break_even}회째 분석")
-        print("\n  Silver 빌드 비용은 두 조건에 공통이라 상쇄된다. 여기서 분할상환되는")
-        print("  것은 Gold 빌드뿐이다.")
 
     return 0
 

@@ -1,13 +1,13 @@
 """Measurement modules.
 
-One module per hypothesis, each producing fields of the experiment result
-schema:
+=======================  =====  ============================================
+:mod:`roles`             RQ1    semantic roles and per-layer projection
+:mod:`pairing`           RQ1    role × transition-cause counts (primary)
+:mod:`quality`           RQ1    per-layer integrity checks and diagnostics
+:mod:`code_metrics`      RQ2    preprocessing LOC, function count, steps
+:mod:`reproducibility`   RQ3    R1 rebuild determinism
+=======================  =====  ============================================
 
-===================  ====  ==================================================
-:mod:`quality`       H1    type consistency, missing, duplicate, schema,
-                           code validity, parsing failure
-:mod:`code_metrics`  H2    preprocessing LOC, function count, step count
-:mod:`runtime`       H2    wall-clock runtime and peak memory
-:mod:`reproducibility` H4  output hash, row/schema equality, build success
-===================  ====  ==================================================
+Execution time is measured by the timing protocol in ``scripts/_timing.py``, not
+by a module here.
 """

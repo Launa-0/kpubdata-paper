@@ -1,4 +1,4 @@
-"""R1 — 같은 Bronze 스냅샷을 N회 재빌드해 결정성을 측정한다 (#17, H4 전반부).
+"""R1 — 같은 Bronze 스냅샷을 N회 재빌드해 결정성을 측정한다 (#17, RQ3).
 
 API를 다시 호출하지 않는다. 얼린 스냅샷을 로컬 upload store에서 읽어 같은 BuildSpec
 으로 반복 빌드하고, 매번 산출물의 content digest와 행 수·스키마를 기록한다.
@@ -23,6 +23,8 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
+import _builder_identity  # noqa: E402
+import _timing  # noqa: E402
 from _paths import add_common_arguments, snapshot_source  # noqa: E402
 from trades_spec import build_spec  # noqa: E402
 
@@ -68,6 +70,9 @@ def main(argv: list[str] | None = None) -> int:
         original_filename="raw_records.jsonl",
     )
     spec = build_spec(upload.upload_id, description="R1 재빌드 결정성 측정")
+    # 어느 코드가 이 관측을 냈는지 관측과 같이 남긴다 — 판정은 다른 환경에서 한다.
+    builder = _builder_identity.as_version(_builder_identity.capture())
+    paper_sha, paper_dirty = _timing.git_head(_timing.EXPERIMENTS.parent)
 
     observations = []
     for index in range(1, args.repeats + 1):
@@ -99,6 +104,10 @@ def main(argv: list[str] | None = None) -> int:
                 "row_count": rows,
                 "schema": schema,
                 "seconds": round(elapsed, 1),
+                "snapshot_id": args.snapshot_id,
+                "builder": builder,
+                "paper_sha": paper_sha,
+                "paper_dirty": paper_dirty,
             }
         )
         head = digest[:16] if digest else "—"

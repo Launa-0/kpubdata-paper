@@ -97,8 +97,9 @@ GENERATIONS: dict[str, tuple[str, ...]] = {
     "G4": ("자치구", "대여소명", "기준년월", "대여건수", "반납건수"),
 }
 
-#: T4가 쓰는 통합 스냅샷. G4는 의미가 끊겨 여기 들어가지 않는다.
-T4 = ("G1", "G2", "I1", "G3")
+#: 통합 스냅샷(``seoul-bike-rent-month``)에 들어가는 세대. G4는 의미가 끊겨 빠진다.
+#: 명령줄 값 ``T4``는 역사적 이름이다 — 폐기한 과제 T4가 이 스냅샷을 쓰려 했다.
+INTEGRATED = ("G1", "G2", "I1", "G3")
 
 
 def decode(raw: bytes) -> tuple[str, str]:
@@ -125,12 +126,12 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument(
         "--generation",
         default="T4",
-        help="G1/G2/I1/G3/G4 하나, 또는 T4(=G1+G2+I1+G3). 기본: T4",
+        help="G1/G2/I1/G3/G4 하나, 또는 통합본 T4(=G1+G2+I1+G3, 역사적 이름). 기본: T4",
     )
     parser.add_argument("--dry-run", action="store_true", help="분류만 하고 쓰지 않는다")
     args = parser.parse_args(argv)
 
-    wanted = set(T4) if args.generation == "T4" else {args.generation}
+    wanted = set(INTEGRATED) if args.generation == "T4" else {args.generation}
     unknown = wanted - set(GENERATIONS)
     if unknown:
         raise SystemExit(f"모르는 세대: {sorted(unknown)}")

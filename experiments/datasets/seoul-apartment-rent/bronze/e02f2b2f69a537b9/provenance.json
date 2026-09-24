@@ -1,0 +1,54 @@
+{
+  "build_id": "e02f2b2f69a537b9",
+  "built_at": "2026-09-24T16:12:01.742635+09:00",
+  "columns": [
+    "aptNm",
+    "aptSeq",
+    "buildYear",
+    "contractTerm",
+    "contractType",
+    "dealDay",
+    "dealMonth",
+    "dealYear",
+    "deposit",
+    "excluUseAr",
+    "floor",
+    "jibun",
+    "monthlyRent",
+    "preDeposit",
+    "preMonthlyRent",
+    "roadnm",
+    "roadnmbcd",
+    "roadnmbonbun",
+    "roadnmbubun",
+    "roadnmcd",
+    "roadnmseq",
+    "roadnmsggcd",
+    "sggCd",
+    "umdNm",
+    "useRRRight"
+  ],
+  "environment": {
+    "packages": {
+      "kpubdata": "0.6.0",
+      "kpubdata-builder": "0.4.0.dev0+096d023f9546"
+    },
+    "platform": "unknown",
+    "python_version": "3.13.2"
+  },
+  "inputs": {
+    "config_hash": "e65edbfc1f6d969c6ae97e769e816fb69213dc8271573bb94865febad794ec82",
+    "dataset": "seoul-apartment-rent",
+    "layer": "bronze",
+    "pipeline_version": "0.4.0.dev0+096d023f9546+e65edbfc1f6d",
+    "snapshot_id": "seoul-apartment-rent/20260923-a0ed9577c41a",
+    "upstream_build_id": null
+  },
+  "kpx_version": "0.1.0",
+  "output_checksum": "fb9d34190f47eb4b247357b52ff49c0f864d406f9b657f6285de9ea2a2da4c8e",
+  "output_file_count": 2,
+  "output_size_bytes": 631348349,
+  "row_count": 1221491,
+  "schema_version": 1,
+  "status": "ok"
+}

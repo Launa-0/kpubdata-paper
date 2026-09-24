@@ -12,7 +12,7 @@ from kpx.metrics.code_metrics import (
     CodeMetricsError,
     effective_loc,
     measure_preparation,
-    table3,
+    preparation_code_table,
 )
 
 TRANSFORMS = '''
@@ -159,7 +159,7 @@ def test_an_unreachable_public_helper_is_not_measured(
 def test_shared_transformations_are_counted_but_not_charged(
     bronze: ModuleType, transforms: ModuleType
 ) -> None:
-    """Every condition draws on the same helpers; charging them compresses H2."""
+    """Every condition draws on the same helpers; charging them compresses the RQ2 comparison."""
     metrics = measure_preparation(bronze.Runner(), transforms=transforms)
     assert metrics.transformations == ("normalize_district", "parse_deal_date", "parse_price")
     # the three helper bodies are 6 effective lines that are not in the total
@@ -190,7 +190,7 @@ def test_function_count_covers_helpers_and_transformations(
 def test_bronze_costs_more_than_silver(
     bronze: ModuleType, silver: ModuleType, transforms: ModuleType
 ) -> None:
-    """The direction H2 predicts, on fixtures written to be honest about it."""
+    """The direction the RQ2 comparison expects, on fixtures written to be honest about it."""
     cheap = measure_preparation(silver.Runner(), transforms=transforms)
     dear = measure_preparation(bronze.Runner(), transforms=transforms)
     assert dear.preprocessing_loc > cheap.preprocessing_loc
@@ -214,14 +214,6 @@ def test_recorded_steps_are_carried_through(silver: ModuleType, transforms: Modu
     metrics = measure_preparation(silver.Runner(), transforms=transforms, steps=4)
     assert metrics.transformation_steps == 4
     assert metrics.to_dict()["transformation_steps"] == 4
-
-
-def test_complexity_is_summed_over_the_measured_functions(
-    bronze: ModuleType, transforms: ModuleType
-) -> None:
-    """_drop_cancelled has a branch, so the total exceeds one per function."""
-    metrics = measure_preparation(bronze.Runner(), transforms=transforms)
-    assert metrics.cyclomatic_complexity > len(metrics.measured)
 
 
 def test_to_dict_fills_only_result_schema_fields(
@@ -258,12 +250,12 @@ def test_a_runner_defined_outside_a_module_is_refused() -> None:
         measure_preparation(Runner())
 
 
-# -- Table 3 ---------------------------------------------------------------
+# -- preparation code table -----------------------------------------------
 
 
-def test_table3_orders_conditions_the_way_the_paper_prints_them() -> None:
-    measurement = CodeMetrics(preprocessing_loc=1, function_count=1, cyclomatic_complexity=1)
-    table = table3(
+def test_the_table_orders_conditions_in_medallion_order() -> None:
+    measurement = CodeMetrics(preprocessing_loc=1, function_count=1)
+    table = preparation_code_table(
         {
             ("task01", "monolithic"): measurement,
             ("task01", "gold"): measurement,
@@ -274,13 +266,12 @@ def test_table3_orders_conditions_the_way_the_paper_prints_them() -> None:
     assert list(table["condition"]) == ["bronze", "silver", "gold", "monolithic"]
 
 
-def test_table3_carries_every_effort_metric() -> None:
-    table = table3(
+def test_the_table_carries_every_code_metric() -> None:
+    table = preparation_code_table(
         {
             ("task01", "silver"): CodeMetrics(
                 preprocessing_loc=18,
                 function_count=3,
-                cyclomatic_complexity=5,
                 transformation_steps=4,
             )
         }
@@ -289,10 +280,9 @@ def test_table3_carries_every_effort_metric() -> None:
     assert row["preprocessing_loc"] == 18
     assert row["function_count"] == 3
     assert row["transformation_steps"] == 4
-    assert row["cyclomatic_complexity"] == 5
 
 
-def test_table3_of_nothing_is_empty_but_shaped() -> None:
-    table = table3({})
+def test_the_table_of_nothing_is_empty_but_shaped() -> None:
+    table = preparation_code_table({})
     assert table.empty
     assert "preprocessing_loc" in table.columns

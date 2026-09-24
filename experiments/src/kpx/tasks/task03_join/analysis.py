@@ -5,8 +5,6 @@
 
 from __future__ import annotations
 
-import pandas as pd
-
 from kpx.contract import AnalysisInput, AnalysisOutput
 
 
@@ -48,14 +46,3 @@ def previous_year_month(year_month: str) -> str:
     """``"2021-02"`` -> ``"2020-02"``."""
     year, month = year_month.split("-")
     return f"{int(year) - 1:04d}-{month}"
-
-
-def mean_jeonse_ratio(result: pd.DataFrame) -> float:
-    """자치구·월에 걸친 전세가율의 평균.
-
-    한국부동산원의 "평균 매매가격 대비 전세가격"과 같은 양이 아니다 — 그쪽은 표본
-    조사 기반이고 이쪽은 실거래 기반이며, 2021년 7월 표본 개편으로 생긴 단절도
-    이쪽에는 없다. 대조할 때는 수준이 아니라 방향과 추세 상관으로 본다
-    (#6, metrics/reference.py).
-    """
-    return float(result["jeonse_ratio"].mean())

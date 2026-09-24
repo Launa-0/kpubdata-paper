@@ -1,0 +1,20 @@
+{
+  "paper_sha": "4fcca24e0506aaaa9bd018c58542ce8a84a348b4",
+  "builder_sha": "096d023f954659180c5f427125944dbc6ecf575c",
+  "builder_identity": "0.4.0.dev0+096d023f9546",
+  "builder_tag": "paper-eval-builder-096d023",
+  "generated_by": "scripts/canonical.sh",
+  "results": {
+    "experiment_results.parquet": "a25e3ac47db1b9259c14abd319ddf06351d67274426a0d1ea2cd0a51cc450254",
+    "experiment_results.csv": "48af08279964426e9606e8b751b0b9e8c6481870df0fdcbeaa34371322cf7c40",
+    "rq1_layer_quality.parquet": "37fb732d1f81a141d4eafaba4259501ce9748fafec805363f2ad0cfb530a3afd",
+    "rq1_role_pair.parquet": "d931ac92c7732e1f2c2236916ae91d66a4d1e0a8b16ac6ce4a61b638d3546f77",
+    "rq1_role_transition.parquet": "f8406379abd7e3875145d8fab80bedae9a16534f4e537a15e554a6b900dae2fa",
+    "rq1_coalesce_source.parquet": "240516a1c9b8f70365e5623ad4b91737fa101d135471bfaef9f8e43ef4c77a7b",
+    "source_evolution.csv": "3ca6821e23a5e0c1af42d8f204774e2728d5b729a53c5c413716a82e1b7ce2fc",
+    "storage_footprint.csv": "d22561b07f2002d0850a20231f6e9bbe3a2bc78d6a9f5a022d03760679a02f6b",
+    "perturbation.parquet": "65e83ae69fb5b9ec055a06ddc49d7a41cf08bf49e24feab2fc65ff427657b094",
+    "perturbation_counterfactual.json": "6eaa7350229905441d5005e429daa30be812d332db3f5122f566f38f06d56371",
+    "r1_determinism.csv": "9cccbd8071c0b45c4a018db87ec8afe43c2a8d1a6dde97b81a9e8a2c7ce97c4d"
+  }
+}

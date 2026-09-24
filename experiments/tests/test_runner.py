@@ -1,7 +1,7 @@
 """Running one condition of one task end to end (#13).
 
 The harness had every measurement piece — the contract, the step recorder, code
-metrics, the runtime protocol, the result store — and no path that drove them.
+metrics, the result store — and no path that drove them.
 These tests fix that path: what a run measures, what it records, and what it
 does when preparation fails.
 """
@@ -70,8 +70,6 @@ class TestRunCondition:
             datasets=_resolver(),
             snapshot_id="demo/20260101-abc123",
             pipeline_version="0.1.0",
-            repeat=1,
-            warmup=0,
         )
 
         assert row.task == "task00"
@@ -83,14 +81,13 @@ class TestRunCondition:
 
         # measured: every field the schema requires when status == "ok"
         assert row.rows == 2  # the negative price was dropped in preparation
-        assert row.runtime_seconds is not None and row.runtime_seconds >= 0
         assert row.transformation_steps == 1
         assert row.preprocessing_loc is not None and row.preprocessing_loc > 0
         assert row.function_count is not None
         assert row.output_hash
 
     def test_rows_counts_the_prepared_input_not_the_layer(self) -> None:
-        # Table 4 reports what preparation cost; filtering is part of that cost.
+        # rows report what preparation cost; filtering is part of that cost.
         # A row count taken from the layer would erase the difference between
         # conditions that filter and conditions that do not.
         row = run_condition(
@@ -99,8 +96,6 @@ class TestRunCondition:
             datasets=_resolver(),
             snapshot_id="demo/20260101-abc123",
             pipeline_version="0.1.0",
-            repeat=1,
-            warmup=0,
         )
 
         assert row.rows == 2
@@ -113,8 +108,6 @@ class TestRunCondition:
             snapshot_id="demo/20260101-abc123",
             pipeline_version="0.1.0",
             seed=3,
-            repeat=1,
-            warmup=0,
         )
 
         assert row.seed == 3
@@ -138,8 +131,6 @@ class TestFailedRun:
             datasets=_resolver(),
             snapshot_id="demo/20260101-abc123",
             pipeline_version="0.1.0",
-            repeat=1,
-            warmup=0,
         )
 
         assert row.status == "failed"
@@ -156,6 +147,4 @@ class TestUnknownCondition:
                 datasets=_resolver(),
                 snapshot_id="demo/20260101-abc123",
                 pipeline_version="0.1.0",
-                repeat=1,
-                warmup=0,
             )

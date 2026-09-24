@@ -7,13 +7,10 @@ names, on column counts, or even on whether a column exists. Silver's
 generation; Silver's ``deal_date`` is not in Bronze at all, it is built from
 three parts.
 
-The earlier plan mapped ``Bronze column -> Silver column`` from ``rename`` and
-``casts`` alone. It could not express either case, and it failed quietly: a
-role whose Bronze column did not exist was dropped from the Bronze spec and
-kept in Silver's, so the two layers were measured over different denominators
-and the tables still printed. Bike measured two required roles against three.
-
-So a role is declared once and carries **how each layer produces it**:
+A column-to-column mapping from ``rename`` and ``casts`` alone cannot express
+either case, and fails quietly: a role whose Bronze column does not exist drops
+out of one side only, and the two layers are measured over different
+denominators. So a role is declared once and carries **how each layer produces it**:
 
 ============  ==================================================================
 ``direct``    one column, possibly under a different name (``rename``)

@@ -1,9 +1,12 @@
-# Measuring analytical effort
+# Measuring preparation code
 
-RQ2 asks how much work a condition costs before analysis can begin, and H2
-predicts Bronze > Silver > Gold. This document fixes how that is measured,
-before any task is written, so the rule cannot be adjusted once the numbers are
+RQ2 compares how much preparation code each condition needs before the shared
+analysis can begin. This document fixes how that is measured. The rule was set
+before any task was written, so it could not be adjusted once the numbers were
 visible. It is the source of the paper's Construct Validity paragraph.
+
+Results: `results/experiment_results.parquet` →
+`tables/rq2_preparation.{csv,md}`.
 
 ## Why a single LOC number is not enough
 
@@ -14,14 +17,13 @@ Two failure modes make a bare line count worthless:
 * **Lines are not effort.** Four lines of dense pandas are not cheaper than
   eight readable ones, and a condition can always be compressed.
 
-So four numbers are reported together, and the boundary is declared in advance.
+So three numbers are reported together, and the boundary is declared in advance.
 
 | Metric | What it is | Role | Paper label |
 | :--- | :--- | :--- | :--- |
 | `preprocessing_loc` | effective lines of `prepare` and the private helpers it calls | **primary** | Preprocessing LOC |
 | `function_count` | distinct named transformations the preparation invokes | **primary** | Transformation functions |
 | `transformation_steps` | top-level `ctx.step(...)` blocks recorded at run time | diagnostic | Instrumented preparation stages |
-| `cyclomatic_complexity` | summed over the measured functions | diagnostic | — |
 
 Two kinds of number are reported together and argued from differently.
 
@@ -29,13 +31,11 @@ Two kinds of number are reported together and argued from differently.
 derived from the source by AST, so the author cannot move them by writing the
 same work differently.
 
-**Execution cost** — `runtime_seconds` and `peak_memory_mb` from
-[`metrics/runtime.py`](../src/kpx/metrics/runtime.py).
-
-**Diagnostic only** — `transformation_steps` and `cyclomatic_complexity` are
-reported but not argued from. Complexity is there so a reader can see that a
-condition with fewer lines did not buy them with denser control flow. For steps,
+**Diagnostic only** — `transformation_steps` is reported but not argued from;
 see [Why steps are diagnostic](#why-steps-are-diagnostic).
+
+Execution cost is not measured here. It comes only from the timing experiment
+(`scripts/_timing.py`, `results/timing_*`; see [statistics.md](statistics.md)).
 
 ## The preprocessing / analysis boundary
 
@@ -85,7 +85,7 @@ This second rule is what keeps the conditions comparable. Every condition draws
 on the same helper module, and the monolithic baseline is *required* to
 (see [monolithic-baseline.md](monolithic-baseline.md)) — so charging helper
 bodies would bill every condition for the same shared code and compress the
-differences H2 is about. What differs between conditions is how much each one
+differences the RQ2 comparison is about. What differs between conditions is how much each one
 has to *do* with those helpers before the analysis can start, and that is what
 `prepare` contains.
 
@@ -150,13 +150,14 @@ carry a cross-condition claim about effort. The AST-derived metrics can, and the
 say these two conditions cost about the same to write — which is the expected
 result, since the baseline reuses the same helpers by design.
 
-What the step record is still good for: the per-step time breakdown, and a
-readable trace of what each condition actually did. Those are what it was built
-for in the runner contract, and they stay.
+What the step record is still good for: a readable trace of what each
+condition actually did (it also times each step, but those times are not
+reported — execution cost comes only from the timing experiment). That is
+what it was built for in the runner contract, and it stays.
 
 **Not done, deliberately:** monolithic was not re-annotated into seven steps, and
 it was not excluded from the table. Re-annotating would move a number in the
-direction that favours H2 after seeing it; excluding one condition after seeing
+direction that favours our own hypothesis after seeing it; excluding one condition after seeing
 its value is post-hoc selection. Reporting the number and declining to argue from
 it is the change that does not touch the data.
 
@@ -166,14 +167,14 @@ This paragraph is the source of the corresponding note in Threats to Validity
 ## Usage
 
 ```python
-from kpx.metrics.code_metrics import measure_preparation, table3
+from kpx.metrics.code_metrics import measure_preparation, preparation_code_table
 from kpx.tasks.task01_price_analysis import silver, transforms
 
 metrics = measure_preparation(silver.Runner(), transforms=transforms, steps=recorder.step_count)
-metrics.preprocessing_loc   # 18
+metrics.preprocessing_loc   # 12
 metrics.function_count      # 3
-metrics.measured            # ('prepare', '_normalize_columns')
-metrics.transformations     # ('parse_deal_date', 'parse_price')
+metrics.measured            # ('prepare',)
+metrics.transformations     # ('aggregate_by_district_month', 'price_per_m2', 'to_year_month')
 ```
 
 `measured` and `transformations` are returned so that a reviewer can check
@@ -190,11 +191,11 @@ re-deriving the call graph by hand.
 > `prepare`, the analysis is defined once per task and shared unchanged across
 > conditions, and the measurement follows the call graph from `prepare` through
 > private helpers only. The boundary was fixed in the runner contract before any
-> condition was implemented and is identical for all four. Second, effort is
-> reported as four numbers rather than one — lines, distinct transformation
-> functions, logical transformation steps recorded at run time, and cyclomatic
-> complexity as a secondary indicator — so that a condition cannot appear
-> cheaper merely by being denser. Third, calls into shared transformation
+> condition was implemented and is identical for all four. Second, preparation
+> is reported as three numbers rather than one — lines and distinct
+> transformation functions, both derived from the source, and logical
+> transformation steps recorded at run time as a diagnostic only, since their
+> count depends on how a condition brackets its work. Third, calls into shared transformation
 > helpers count toward the function count but their bodies are not charged to
 > any condition, since every condition, the monolithic baseline included, draws
 > on the same helpers; absolute line counts are therefore lower than a

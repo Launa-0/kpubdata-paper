@@ -1,0 +1,35 @@
+{
+  "build_id": "686a1e04b1ec3c35",
+  "built_at": "2026-09-24T16:28:59.867661+09:00",
+  "columns": [
+    "district_code",
+    "year_month",
+    "n_matched",
+    "mean_sale_price_per_m2",
+    "mean_jeonse_deposit_per_m2"
+  ],
+  "environment": {
+    "packages": {
+      "numpy": "2.5.3",
+      "pandas": "3.0.6",
+      "pyarrow": "25.0.1"
+    },
+    "platform": "Windows-11-10.0.22000-SP0",
+    "python_version": "3.13.2"
+  },
+  "inputs": {
+    "config_hash": "cc45d6389010ece57e5af2eb1a47a92148646d8f93333b87fbb34af50b1c03e7",
+    "dataset": "seoul-apartment-trades-rent-monthly",
+    "layer": "gold",
+    "pipeline_version": "0.4.0.dev0+096d023f9546+e65edbfc1f6d|0.4.0.dev0+096d023f9546+226f0ff82769",
+    "snapshot_id": "seoul-apartment-rent/20260923-a0ed9577c41a|seoul-apartment-trades/20260922-6660c8e25162",
+    "upstream_build_id": "20cd6683a6e72f4f|0331813b255cf325"
+  },
+  "kpx_version": "0.1.0",
+  "output_checksum": "ecf28696a880d29c69f76df0aa396726d2c4de010016938a16ae3d0c3f924de1",
+  "output_file_count": 1,
+  "output_size_bytes": 34614,
+  "row_count": 1500,
+  "schema_version": 1,
+  "status": "ok"
+}

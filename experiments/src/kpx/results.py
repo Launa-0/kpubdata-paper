@@ -1,8 +1,11 @@
 """The experiment result schema and the store that holds it.
 
-Every **task-run** number in the paper (T1/T3, per condition) comes from one row
-of ``results/experiment_results``, so the file has to be trustworthy on its own
-— a reader who never runs the pipeline sees only this. RQ1's artifact-pair
+Every **task-run** number in the paper (T1/T3, per condition) — preparation
+code volume, the analytical result's digest for the equivalence gate, and T3's
+join diagnostic — comes from one row of ``results/experiment_results``, so the
+file has to be trustworthy on its own: a reader who never runs the pipeline sees
+only this. Execution cost is not here; it comes from the timing protocol
+(``scripts/_timing.py`` → ``results/timing_*``). RQ1's artifact-pair
 measurements live in separate ``results/rq1_*.parquet`` tables (see the Storage
 section below).
 
@@ -14,9 +17,9 @@ already defines as sufficient to replay a run. A row missing any of them is not
 a weaker result, it is an unattributable one, so they are rejected rather than
 stored as null.
 
-**A metric that does not apply must be absent, not zero.** ``mae`` belongs to
-the prediction task and ``join_matching_rate`` to the integration task. Stored
-as ``0.0`` they would silently enter a mean; stored as missing they cannot.
+**A metric that does not apply must be absent, not zero.** ``join_matching_rate``
+belongs to the integration task (T3). Stored as ``0.0`` for T1 it would silently
+enter a mean; stored as missing it cannot.
 Every metric is therefore nullable, and validation distinguishes "not applicable
 here" from "should have been measured and was not".
 
@@ -27,9 +30,8 @@ Missing-value rules
 ``identity``    always present and non-null; the row is meaningless
                 without it
 ``measured``    non-null whenever ``status == "ok"``; a successful run
-                that did not record its own cost is a harness bug
-``optional``    may be missing, meaning either "not applicable to this
-                task" or "not measured on this platform"
+                that did not record it is a harness bug
+``optional``    may be missing, meaning "not applicable to this task"
 ==============  ======================================================
 
 A failed run is still recorded — ``status="failed"`` with whatever was measured
@@ -65,7 +67,7 @@ Requirement = Literal["identity", "measured", "optional"]
 Status = Literal["ok", "failed", "skipped"]
 
 #: ``ok`` ran to completion; ``failed`` raised; ``skipped`` was not attempted
-#: (a metric unavailable on the platform, a condition not defined for a task).
+#: (a condition not defined for a task).
 STATUSES: tuple[Status, ...] = ("ok", "failed", "skipped")
 
 RESULTS_FILENAME = "experiment_results.parquet"
@@ -91,68 +93,34 @@ class Field:
 RESULT_SCHEMA: tuple[Field, ...] = (
     # -- identity: what run this row describes -----------------------------
     Field("run_id", "string", "identity", "unique id of this run"),
-    Field("task", "string", "identity", "task01 … task04"),
+    Field("task", "string", "identity", "task01 | task03"),
     Field(
         "dataset", "string", "identity", "dataset(s) read, joined by '+' for multi-dataset tasks"
     ),
     Field("condition", "string", "identity", "bronze | silver | gold | monolithic"),
-    Field("seed", "Int64", "identity", "random seed; 0 for deterministic tasks", minimum=0),
+    Field("seed", "Int64", "identity", "0; both tasks are deterministic", minimum=0),
     Field("source_snapshot", "string", "identity", "snapshot_id the run consumed"),
     Field("pipeline_version", "string", "identity", "builder version that produced the layers"),
     Field("status", "string", "identity", "ok | failed | skipped"),
-    # -- what the run cost (RQ2/H2) ----------------------------------------
+    # -- preparation code volume (RQ2) --------------------------------------
     Field("rows", "Int64", "measured", "rows in the prepared analysis input", minimum=0),
-    Field("runtime_seconds", "Float64", "measured", "median of the measured runs", minimum=0.0),
     Field("preprocessing_loc", "Int64", "measured", "LOC of prepare() and its helpers", minimum=0),
     Field("function_count", "Int64", "measured", "transformation functions used", minimum=0),
-    Field("transformation_steps", "Int64", "measured", "top-level recorded steps", minimum=0),
-    Field("output_hash", "string", "measured", "digest of the analytical result (R1)"),
     Field(
-        "peak_memory_mb", "Float64", "optional", "peak RSS; not measurable everywhere", minimum=0.0
+        "transformation_steps",
+        "Int64",
+        "measured",
+        "top-level recorded steps (diagnostic)",
+        minimum=0,
     ),
-    # -- data quality (RQ1/H1) ---------------------------------------------
-    Field(
-        "missing_rate", "Float64", "optional", "missing values / total", minimum=0.0, maximum=1.0
-    ),
-    Field(
-        "duplicate_rate", "Float64", "optional", "duplicate rows / total", minimum=0.0, maximum=1.0
-    ),
-    Field("schema_validity", "Float64", "optional", "valid rows / total", minimum=0.0, maximum=1.0),
-    # -- analytical correctness (RQ3/H3); task-specific ---------------------
+    # -- equivalence gate ----------------------------------------------------
+    Field("output_hash", "string", "measured", "digest of the analytical result"),
+    # -- task diagnostic -----------------------------------------------------
     Field(
         "join_matching_rate",
         "Float64",
         "optional",
         "task03 only: matched join keys / total",
-        minimum=0.0,
-        maximum=1.0,
-    ),
-    Field("mae", "Float64", "optional", "task02 only: mean absolute error", minimum=0.0),
-    Field("rmse", "Float64", "optional", "task02 only: root mean squared error", minimum=0.0),
-    # Agreement with a published statistic, never called a ground truth (#6).
-    # All three are optional because which of them a reference supports depends
-    # on what it publishes: an index has no APD, and a task with no reference
-    # has none of them.
-    Field(
-        "reference_apd",
-        "Float64",
-        "optional",
-        "mean absolute % deviation from the reference level; absent for an index",
-        minimum=0.0,
-    ),
-    Field(
-        "reference_trend_correlation",
-        "Float64",
-        "optional",
-        "Pearson r of period-over-period changes vs the reference",
-        minimum=-1.0,
-        maximum=1.0,
-    ),
-    Field(
-        "reference_direction_agreement",
-        "Float64",
-        "optional",
-        "share of changes moving the same way as the reference",
         minimum=0.0,
         maximum=1.0,
     ),
@@ -173,7 +141,7 @@ class ResultRow:
     """One run's result.
 
     Optional metrics default to ``None``, which is stored as missing. A task
-    that has no ``mae`` leaves it alone rather than passing ``0.0``.
+    with no join leaves ``join_matching_rate`` alone rather than passing ``0.0``.
     """
 
     run_id: str
@@ -185,36 +153,27 @@ class ResultRow:
     seed: int = 0
     status: Status = "ok"
     rows: int | None = None
-    runtime_seconds: float | None = None
     preprocessing_loc: int | None = None
     function_count: int | None = None
     transformation_steps: int | None = None
     output_hash: str | None = None
-    peak_memory_mb: float | None = None
-    missing_rate: float | None = None
-    duplicate_rate: float | None = None
-    schema_validity: float | None = None
     join_matching_rate: float | None = None
-    mae: float | None = None
-    rmse: float | None = None
-    reference_apd: float | None = None
-    reference_trend_correlation: float | None = None
-    reference_direction_agreement: float | None = None
 
     def to_dict(self) -> dict[str, Any]:
         return asdict(self)
 
 
 def output_digest(frame: pd.DataFrame) -> str:
-    """Digest an analytical result, for R1's identical-output comparison.
+    """Digest an analytical result, for the equivalence gate across conditions.
 
     Serialized without the index, which is positional rather than part of the
-    result, and without rounding: two builds that agree only to 12 significant
-    digits have not produced identical output, and R1 exists to notice that.
+    result, and without rounding: two conditions that agree only to 12
+    significant digits have not produced the same result, and the gate exists to
+    notice that.
 
-    Comparable within one environment, which is what R1 and R2 compare. The
-    float repr pandas emits can change between pandas versions, so a hash is not
-    a claim about other machines — ``pipeline_version`` and the lockfile are.
+    Comparable within one environment. The float repr pandas emits can change
+    between pandas versions, so a hash is not a claim about other machines —
+    ``pipeline_version`` and the lockfile are.
     """
     payload = frame.to_csv(index=False, lineterminator="\n").encode("utf-8")
     return hashlib.sha256(payload).hexdigest()
@@ -305,9 +264,9 @@ class ResultStore:
         return frame.reset_index(drop=True)
 
     def by_condition(self, metric: str, *, task: str | None = None) -> pd.DataFrame:
-        """A task × condition table of ``metric``, the shape Tables 2–4 want.
+        """A task × condition table of ``metric``.
 
-        Repeated runs — seeds, or R1's rebuilds — are averaged, and conditions
+        Repeated runs are averaged, and conditions
         appear in Medallion order rather than alphabetically, so ``monolithic``
         reads as the baseline it is rather than sorting between gold and silver.
         """

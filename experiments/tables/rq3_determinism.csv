@@ -1,0 +1,2 @@
+builds,successful,distinct_digests,rows_identical,schema_identical,identical_to_canonical_silver,rows,digest
+10,10,1,True,True,True,233596,68409d83cc4d

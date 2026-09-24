@@ -1,6 +1,6 @@
 """서울 아파트 실거래가의 Silver 계약 — 세 스크립트가 공유한다.
 
-build_silver / r1_rebuild / r2_build이 같은 BuildSpec을 써야 한다. 각자 복사해 두면
+build_silver / r1_rebuild가 같은 BuildSpec을 써야 한다. 각자 복사해 두면
 한 곳만 고쳤을 때 R1이 재는 "같은 recipe"가 더 이상 같지 않게 된다.
 
 계약은 ``SPEC`` 한 벌로만 선언한다. ``build_spec()``이 그것으로 BuildSpec을 만들고

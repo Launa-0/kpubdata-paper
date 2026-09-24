@@ -1,0 +1,4 @@
+dataset,role_cells,changed_cells,changed_rate,primitive_type_normalization,numeric_formatting,identifier_padding,date_year_month_normalization,null_canonicalization,derived_field,unchanged
+seoul-apartment-trades,4905516,1168608,0.2382232572475556,701416,233596,0,0,0,233596,3736908
+seoul-apartment-rent,21986838,4941299,0.22473895518764453,2511996,1207812,0,0,0,1221491,17045539
+seoul-bike-rent-month,53924596,30648135,0.5683516850084515,24500672,0,2241547,1914327,1991589,0,23276461

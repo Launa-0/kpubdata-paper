@@ -1,6 +1,7 @@
-# `required` 선언 규칙 (H1 측정의 전제)
+# `required` 선언 규칙 (RQ1 integrity check의 전제)
 
-H1의 여섯 지표 중 **셋이 `required` 컬럼에 대해서만 정의된다.**
+RQ1의 층별 비교 지표(integrity check, `rq1_layer_quality`) 중 **셋이 `required`
+컬럼에 대해서만 정의된다.** role × 전이 원인 표에서도 required 여부가 열로 남는다.
 
 | 지표 | 정의 |
 |---|---|
@@ -8,14 +9,15 @@ H1의 여섯 지표 중 **셋이 `required` 컬럼에 대해서만 정의된다.
 | `parsing_failure_rate` | **required** 값 중 하나라도 present-but-unreadable인 레코드 / 레코드 |
 | `schema_conformance` | **required** 컬럼이 전부 존재·해석 가능·범위 내인 레코드 / 레코드 |
 
-그래서 `required`를 무엇으로 선언하느냐가 표 2의 절반을 결정한다. 이것이
+그래서 `required`를 무엇으로 선언하느냐가 층별 비교표의 절반을 결정한다. 이것이
 `quality_spectrum.py`에서 측정 컬럼을 손으로 고르지 않게 만든 뒤에도 남아 있던
 마지막 자유도였고, 그대로 두면 데이터셋마다 다른 기준이 적용된 표가 나온다.
 
 실제로 그런 일이 있었다. 첫 측정에서 `seoul-apartment-trades`의 `required`에는
 쉼표 낀 금액 컬럼이 들어 있어 Bronze `schema_conformance`가 0.000이었고,
 `general-restaurant-permits`의 `required`는 깨끗한 텍스트 세 개뿐이라 1.000이었다.
-두 숫자의 차이는 데이터가 아니라 계약을 쓴 사람이 만든 것이다.
+두 숫자의 차이는 데이터가 아니라 계약을 쓴 사람이 만든 것이다. (음식점 인허가
+데이터셋은 이후 최종 범위에서 제외했다.)
 
 ## 규칙
 
@@ -43,9 +45,8 @@ H1의 여섯 지표 중 **셋이 `required` 컬럼에 대해서만 정의된다.
 ## 과제를 기준으로 삼지 않는 이유
 
 "과제가 읽어야 하는 컬럼"이 더 직관적이지만 쓸 수 없다.
-`general-restaurant-permits`에는 downstream 과제가 없다 — 품질 스펙트럼의 한쪽 끝을
-고정하려고 넣은 데이터셋이라 T1~T4에 들어가지 않는다. 과제 기준 규칙은 이 데이터셋에
-적용할 수 없고, 적용할 수 없는 규칙은 규칙이 아니다.
+`seoul-bike-rent-month`에는 downstream 과제가 없다 — RQ1과 RQ3(원천 세대, perturbation)에만
+쓰인다. 과제 기준 규칙은 이 데이터셋에 적용할 수 없고, 적용할 수 없는 규칙은 규칙이 아니다.
 
 레코드 구조를 기준으로 삼으면 과제가 있든 없든 같은 방식으로 적용된다.
 
@@ -55,8 +56,7 @@ H1의 여섯 지표 중 **셋이 `required` 컬럼에 대해서만 정의된다.
 |---|---|---|---|
 | `seoul-apartment-trades` | `district_code`, `apt_name` | `deal_date` | `area_m2`, `price_10k_krw` |
 | `seoul-apartment-rent` | `district_code`, `apt_name` | `contract_date` | `area_m2`, `deposit_10k_krw` |
-| `seoul-bike-rent-month` | `station_code` | `year_month_raw` | `use_count` |
-| `general-restaurant-permits` | `permit_no`, `business_name` | `permit_date` | `business_status` |
+| `seoul-bike-rent-month` | `station_code` | `ym_raw` | `use_count` |
 
 판단이 갈릴 만한 자리를 밝혀 둔다.
 
@@ -66,14 +66,6 @@ H1의 여섯 지표 중 **셋이 `required` 컬럼에 대해서만 정의된다.
 
 **월세는 넣지 않았다** (rent). 전세 계약에서는 0이고, 보증금이 그 레코드의 주된
 사실이다.
-
-**폐업일자는 넣지 않았다** (restaurant). 영업 중인 업소에는 없는 것이 정상이다.
-표본 10,000건 중 30.0%가 비어 있는데, 이것은 결함이 아니라 3,001건이 영업 중이라는
-뜻이다. 실제로 `SALS_STTS_NM`과 대조하면 불일치가 2건(0.03%)뿐이다.
-
-**업종 무관 컬럼은 넣지 않았다** (restaurant). `FCTRY_*`, `GRNAMT` 등은
-localdata가 모든 인허가 업종에 같은 스키마를 쓰기 때문에 존재하며 일반음식점에는
-해당하지 않는다.
 
 ## 이 규칙이 바꾸지 않는 것
 
@@ -87,6 +79,6 @@ localdata가 모든 인허가 업종에 같은 스키마를 쓰기 때문에 존
 
 ## 동결
 
-이 규칙은 표 2를 만들기 전에 정해 두는 것이다. 측정 결과를 보고 나서 `required`를
+이 규칙은 RQ1을 측정하기 전에 정해 둔 것이다. 측정 결과를 보고 나서 `required`를
 고치면 그때부터는 규칙이 아니라 결과에 맞춘 사후 조정이 된다. 바꿔야 할 이유가
 생기면 이 문서를 먼저 고치고, 왜 바꾸는지와 어떤 숫자가 움직이는지를 같이 적는다.

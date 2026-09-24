@@ -4,18 +4,15 @@ import pandas as pd
 import pytest
 
 from kpx.metrics.quality import (
-    H1_COMPARABLE_METRICS,
-    H1_DIAGNOSTIC_METRICS,
-    TABLE2_METRICS,
+    DIAGNOSTIC_METRICS,
+    INTEGRITY_METRICS,
+    LAYER_QUALITY_METRICS,
     ColumnSpec,
     QualityError,
     QualityReport,
     QualitySpec,
     duplicate_rate,
-    figure3_data,
     measure_quality,
-    table2,
-    table2_diagnostics,
 )
 
 SEOUL_CODES = frozenset({"11110", "11140", "11170"})
@@ -173,7 +170,7 @@ def test_type_consistency_is_undefined_without_typed_columns() -> None:
 
 
 def test_schema_conformance_applies_an_exclusive_lower_bound() -> None:
-    """The bounds H1 cares about are price > 0 and area > 0."""
+    """The bounds the quality spec checks are price > 0 and area > 0."""
     frame = pd.DataFrame({"price_krw": [1.0, 0.0, -2.0]})
     spec = QualitySpec(columns=(ColumnSpec(column="price_krw", role="price", minimum=0),))
     assert measure_quality(frame, spec, layer="silver").schema_conformance == pytest.approx(1 / 3)
@@ -227,14 +224,8 @@ def test_the_same_spec_shape_serves_both_layers() -> None:
     """Bronze and Silver differ in vocabulary, not in what is measured."""
     bronze = measure_quality(bronze_frame(), bronze_spec(), layer="bronze")
     silver = measure_quality(silver_frame(), silver_spec(), layer="silver")
-    for name in TABLE2_METRICS:
+    for name in LAYER_QUALITY_METRICS:
         assert (bronze.metric(name) is None) == (silver.metric(name) is None)
-
-
-def test_to_dict_fills_only_result_schema_fields() -> None:
-    report = measure_quality(silver_frame(), silver_spec(), layer="silver")
-    assert set(report.to_dict()) == {"missing_rate", "duplicate_rate", "schema_validity"}
-    assert report.to_dict()["schema_validity"] == report.schema_conformance
 
 
 def test_an_empty_frame_is_refused() -> None:
@@ -269,7 +260,7 @@ def test_an_unknown_metric_name_is_refused() -> None:
         report.metric("f1_score")
 
 
-# -- Table 2 and Figure 3 --------------------------------------------------
+# -- integrity vs diagnostic ----------------------------------------------
 
 
 def reports() -> dict[str, QualityReport]:
@@ -279,76 +270,16 @@ def reports() -> dict[str, QualityReport]:
     }
 
 
-def test_table2_prints_row_counts_alongside_the_rates() -> None:
-    """So a rate improved by dropping rows is visible at the same glance."""
-    table = table2(reports())  # type: ignore[arg-type]
-    assert table.iloc[0]["Metric"] == "rows"
-    assert table.iloc[0]["bronze"] == 4.0
+def test_every_report_carries_its_row_count() -> None:
+    """행을 버려 바뀐 비율이 그 변화 옆에 보여야 한다."""
+    assert {layer: report.rows for layer, report in reports().items()} == {
+        "bronze": 4,
+        "silver": len(silver_frame()),
+    }
 
 
-def test_table2_signs_improvement_so_positive_always_means_better() -> None:
-    table = table2(reports()).set_index("Metric")  # type: ignore[arg-type]
-    # lower is better: bronze 0.25 -> silver 0.0
-    assert table.loc["parsing_failure_rate", "silver_improvement"] == pytest.approx(0.25)
-    # higher is better: bronze 0.5 -> silver 1.0
-    assert table.loc["schema_conformance", "silver_improvement"] == pytest.approx(0.5)
-
-
-def test_table2_leaves_the_row_count_out_of_the_improvement_column() -> None:
-    """Fewer rows is not an improvement, and more rows is not one either."""
-    table = table2(reports()).set_index("Metric")  # type: ignore[arg-type]
-    assert pd.isna(table.loc["rows", "silver_improvement"])
-
-
-def test_table2_omits_a_metric_no_layer_reports() -> None:
-    spec = QualitySpec(columns=(ColumnSpec(column="price_krw", role="price", minimum=0),))
-    frame = silver_frame()[["price_krw"]]
-    single = {"silver": measure_quality(frame, spec, layer="silver")}
-    assert "code_validity" not in set(table2(single, baseline="silver")["Metric"])  # type: ignore[arg-type]
-
-
-def test_table2_needs_its_baseline() -> None:
-    with pytest.raises(QualityError, match="no report for the baseline"):
-        table2({"silver": reports()["silver"]})  # type: ignore[arg-type]
-
-
-def test_figure3_data_is_tidy() -> None:
-    data = figure3_data(reports())  # type: ignore[arg-type]
-    assert list(data.columns) == ["metric", "layer", "value"]
-    assert set(data["layer"]) == {"bronze", "silver"}
-
-
-def test_figure3_data_omits_metrics_a_layer_does_not_report() -> None:
-    spec = QualitySpec(columns=(ColumnSpec(column="price_krw", role="price", minimum=0),))
-    data = figure3_data(
-        {"silver": measure_quality(silver_frame()[["price_krw"]], spec, layer="silver")}
-    )  # type: ignore[arg-type]
-    assert "code_validity" not in set(data["metric"])
-
-
-# -- comparable vs diagnostic ----------------------------------------------
-
-
-def test_table2_leaves_the_diagnostic_metric_out() -> None:
-    """나란히 찍으면 두 열을 빼는 읽기를 부른다. duplicate는 그것을 지탱하지 못한다."""
-    assert "duplicate_rate" not in set(table2(reports())["Metric"])  # type: ignore[arg-type]
-
-
-def test_diagnostics_report_the_value_without_an_improvement_column() -> None:
-    table = table2_diagnostics(reports())  # type: ignore[arg-type]
-    assert set(table["Metric"]) == set(H1_DIAGNOSTIC_METRICS)
-    assert not [c for c in table.columns if c.endswith("_improvement")]
-
-
-def test_figure3_plots_comparable_metrics_only_unless_asked() -> None:
-    """막대를 나란히 두면 독자가 비교한다 — 호출자가 쓰지 않은 주장이 생긴다."""
-    assert "duplicate_rate" not in set(figure3_data(reports())["metric"])  # type: ignore[arg-type]
-    asked = figure3_data(reports(), metrics=H1_DIAGNOSTIC_METRICS)  # type: ignore[arg-type]
-    assert set(asked["metric"]) == {"duplicate_rate"}
-
-
-def test_the_result_schema_still_carries_every_metric() -> None:
-    """표시에서 내린 것이지 버린 것이 아니다."""
-    assert set(TABLE2_METRICS) == set(H1_COMPARABLE_METRICS) | set(H1_DIAGNOSTIC_METRICS)
+def test_the_layer_table_still_carries_every_metric() -> None:
+    """진단으로 내린 것이지 버린 것이 아니다."""
+    assert set(LAYER_QUALITY_METRICS) == set(INTEGRITY_METRICS) | set(DIAGNOSTIC_METRICS)
     report = measure_quality(silver_frame(), silver_spec(), layer="silver")
-    assert "duplicate_rate" in report.to_dict()
+    assert report.metric("duplicate_rate") is not None

@@ -28,7 +28,6 @@ from rent_spec import SPEC as RENT_SPEC  # noqa: E402
 from trades_spec import SPEC as TRADES_SPEC  # noqa: E402
 
 from kpx.datasets import LayerStore  # noqa: E402
-from kpx.metrics.runtime import MEASURED_RUNS, WARMUP_RUNS  # noqa: E402
 from kpx.pipeline import bind_measured_artifact, record_joined_layer  # noqa: E402
 from kpx.provenance import Provenance, ProvenanceError, ProvenanceStore  # noqa: E402
 from kpx.results import default_store  # noqa: E402
@@ -118,8 +117,6 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--trades-run-id", default="trades-silver-001")
     parser.add_argument("--rent-run-id", default="rent-silver-001")
     parser.add_argument("--datasets", type=Path, default=None, help="provenance 저장소")
-    parser.add_argument("--warmup", type=int, default=WARMUP_RUNS)
-    parser.add_argument("--repeat", type=int, default=MEASURED_RUNS)
     parser.add_argument("--results", type=Path, default=None, metavar="FILE")
     parser.add_argument(
         "--fresh", action="store_true", help="이 과제의 이전 결과 행을 지우고 새로 기록한다"
@@ -184,8 +181,6 @@ def main(argv: list[str] | None = None) -> int:
             datasets=store,
             snapshot_id=inherited["source_snapshot"],
             pipeline_version=inherited["pipeline_version"],
-            warmup=args.warmup,
-            repeat=args.repeat,
         )
         rows.append(row)
         results.append(row)
@@ -194,7 +189,7 @@ def main(argv: list[str] | None = None) -> int:
             continue
         matching = row.join_matching_rate
         print(
-            f"  rows={row.rows} runtime={row.runtime_seconds:.2f}s loc={row.preprocessing_loc} "
+            f"  rows={row.rows} loc={row.preprocessing_loc} functions={row.function_count} "
             f"matching={'—' if matching is None else f'{matching:.10f}'}"
         )
 
@@ -204,7 +199,7 @@ def main(argv: list[str] | None = None) -> int:
         print(f"\n[!] 실패한 조건: {failed}")
 
     reference = next((row.output_hash for row in measured if row.condition == "silver"), None)
-    print("\n=== Silver 대비 결과 일치 ===")
+    print("\n=== Silver 대비 결과 일치 (equivalence gate) ===")
     print(
         pd.DataFrame(
             [

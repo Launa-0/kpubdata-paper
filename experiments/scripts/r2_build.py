@@ -1,14 +1,21 @@
-"""R2 — 상류 소스가 자랄 때 파이프라인이 계약을 유지하는가 (#18, H4 후반부).
+"""R2 — 고정 계약 하나로 따릉이 원천 세대를 빌드한다 (#18, RQ3).
 
-수집 시점이 다른 스냅샷 3개는 만들 수 없다. 이 데이터는 과거 거래라 어제 받든 오늘
-받든 같은 바이트가 온다. 대신 **기간 분할**로 상류가 자라는 상황을 만든다 — T1은
-2020-2022, T2는 2020-2023, T3은 2020-2024다. T1을 받았던 시점에서 보면 T2는 "새
-데이터가 추가된 같은 소스"다.
+``bike_spec.py`` **한 벌**을 세대마다 다시 선언하지 않고 그대로 돌린다. 계약이 무엇을
+흡수하고 무엇에서 멈추는지가 R2의 관측값이다. 세대 정의는
+``docs/bike-source-generations.md``.
 
-hash 일치를 기대하지 않는다. 소스가 달라졌으니 출력이 다른 것이 정상이고, 재는 것은
-빌드 성공률·스키마 호환성·예상치 못한 행 손실이다.
+- G1 / G2 / I1 / G3 — 표현이 바뀌지만 계약이 선언한 범위 안이다.
+- G4 — 관측 단위가 바뀌고 측정값이 사라진다. fail-closed로 멈춰야 한다.
+- 통합 스냅샷(G1+G2+I1+G3) — RQ1과 perturbation 반사실 규칙이 쓰는 Silver다.
 
-**builder 가상환경에서 실행한다.** 판정은 r2_report.py가 한다.
+hash 일치를 기대하지 않는다. 세대마다 원천이 다르니 출력도 다르다. 재는 것은 빌드
+결과, 멈춘 단계와 이유, 행 수다. monolithic 대조는 없다 — 같은 계약을 적용하면 같은
+판정이 나오므로 빌드 성공의 우위를 주장하지 않는다.
+
+**builder 가상환경에서 실행한다.** 판정은 ``r2_report.py``가 harness 환경에서 한다.
+
+    $BUILDER scripts/r2_build.py            # 최종: clean tree가 아니면 멈춘다
+    $BUILDER scripts/r2_build.py --pilot --only G4
 """
 
 from __future__ import annotations
@@ -17,97 +24,120 @@ import argparse
 import json
 import shutil
 import sys
+import time
 from pathlib import Path
-from typing import TextIO
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
-from _paths import add_common_arguments, snapshot_source  # noqa: E402
-from trades_spec import build_spec  # noqa: E402
+import _builder_identity  # noqa: E402
+import _timing  # noqa: E402
+import bike_spec  # noqa: E402
+from _paths import DEFAULT_WORK_ROOT, SNAPSHOTS, snapshot_source  # noqa: E402
 
-PERIODS = {"T1": 2022, "T2": 2023, "T3": 2024}
+#: 세대 → 스냅샷. 통합본의 스냅샷은 계약이 선언한 것이다.
+GENERATIONS = {
+    "G1": "seoul-bike-rent-month-g1/20260923-e91d2c485eaf",
+    "G2": "seoul-bike-rent-month-g2/20260923-ba6abb36ac55",
+    "I1": "seoul-bike-rent-month-i1/20260923-073f1cc75897",
+    "G3": "seoul-bike-rent-month-g3/20260923-43082467e187",
+    "G4": "seoul-bike-rent-month-g4/20260923-1e55bf10ac1d",
+    "G1+G2+I1+G3": bike_spec.SPEC["snapshot_id"],
+}
+
+#: 통합본은 RQ1·perturbation이 읽는 run 디렉터리에 빌드한다 — 같은 빌드를 두 번 하지 않는다.
+INTEGRATED_RUN = bike_spec.SPEC["run_id"]
 
 
-def split_by_period(source: Path, work_root: Path) -> dict[str, tuple[Path, int]]:
-    """마지막 연도만 다른 누적 스냅샷 3개를 만든다."""
-    work_root.mkdir(parents=True, exist_ok=True)
-    counts = dict.fromkeys(PERIODS, 0)
-    handles: dict[str, TextIO] = {}
+def build(generation: str, work_root: Path) -> dict[str, object]:
+    import logging
+
+    import polars as pl
+    from _upload_store import FileUploadRepository
+    from kpubdata_builder.pipeline import run_build
+    from perturbation import _Capture, classify
+
+    snapshot_id = GENERATIONS[generation]
+    source = snapshot_source(SNAPSHOTS, snapshot_id)
+    content = source.read_bytes()
+    rows_in = content.count(b"\n") + (0 if content.endswith(b"\n") else 1)
+
+    run_id = INTEGRATED_RUN if generation == "G1+G2+I1+G3" else f"r2-{generation.lower()}"
+    runs = work_root / "runs"
+    if (runs / run_id).exists():
+        shutil.rmtree(runs / run_id)
+    repository = FileUploadRepository(work_root / "uploads")
+    upload = repository.put(
+        "paper-experiment",
+        content=content,
+        format="jsonl",
+        encoding="utf-8",
+        original_filename="raw_records.jsonl",
+    )
+    # 빌더는 멈춘 이유를 outcome이 아니라 로그로 남긴다("pipeline failed for source").
+    # perturbation과 같은 방식으로 잡아 멈춘 단계를 가른다.
+    capture = _Capture()
+    log = logging.getLogger("kpubdata_builder")
+    log.addHandler(capture)
+    started = time.perf_counter()
     try:
-        for name in PERIODS:
-            handles[name] = (work_root / f"{name}.jsonl").open("w", encoding="utf-8")
-
-        with source.open(encoding="utf-8") as lines:
-            for line in lines:
-                year = int(json.loads(line)["dealYear"])
-                for name, last_year in PERIODS.items():
-                    if year <= last_year:
-                        handles[name].write(line)
-                        counts[name] += 1
+        result = run_build(
+            bike_spec.build_spec(upload.upload_id, description=f"R2 {generation}"),
+            client=None,
+            output_root=runs,
+            run_id=run_id,
+            owner_id="paper-experiment",
+            upload_repository=repository,
+        )
     finally:
-        for handle in handles.values():
-            handle.close()
-    return {name: (work_root / f"{name}.jsonl", counts[name]) for name in PERIODS}
+        log.removeHandler(capture)
+    identity = _builder_identity.write(runs / run_id)
+    outcome = result.outcomes[0]
+    silver = runs / run_id / "silver" / bike_spec.ALIAS / "table.parquet"
+    ok = outcome.status == "ok" and silver.exists()
+    message = " || ".join([outcome.error or "", *capture.errors])
+    return {
+        "generation": generation,
+        "snapshot_id": snapshot_id,
+        "run_id": run_id,
+        "rows_in": rows_in,
+        "status": outcome.status,
+        "stages_completed": ",".join(outcome.stages_completed),
+        "failed_stage": None if ok else classify(message, outcome.stages_completed),
+        "error": None if ok else message[:600],
+        "rows_out": pl.scan_parquet(silver).select(pl.len()).collect().item() if ok else 0,
+        "builder": _builder_identity.as_version(identity),
+        "seconds": round(time.perf_counter() - started, 1),
+    }
 
 
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("snapshot_id")
-    add_common_arguments(parser)
+    parser.add_argument("--work-root", type=Path, default=DEFAULT_WORK_ROOT)
+    parser.add_argument("--only", nargs="+", choices=list(GENERATIONS), default=None)
+    parser.add_argument("--pilot", action="store_true", help="dirty tree 허용")
     args = parser.parse_args(argv)
+    if args.only and not args.pilot:
+        raise SystemExit("최종 실행은 모든 세대로만 돈다 — 줄여 돌리려면 --pilot")
 
-    import polars as pl
-    from kpubdata_builder.pipeline import run_build
-    from kpubdata_builder.uploads.store import SQLiteUploadRepository
-
-    work_root: Path = args.work_root / "r2"
-    if work_root.exists():
-        shutil.rmtree(work_root)
-
-    splits = split_by_period(snapshot_source(args.snapshots, args.snapshot_id), work_root)
-    for name, (_, rows) in splits.items():
-        print(f"{name}: {rows:,}행  (2020~{PERIODS[name]})", flush=True)
-
-    largest = max(path.stat().st_size for path, _ in splits.values())
-    repository = SQLiteUploadRepository(work_root / "uploads.sqlite3", max_bytes=largest + 1024)
+    builder = _builder_identity.as_version(_builder_identity.capture())
+    paper_sha, paper_dirty = _timing.git_head(_timing.EXPERIMENTS.parent)
+    if not args.pilot and (paper_dirty or ".dirty" in str(builder)):
+        raise SystemExit("논문 또는 빌더 레포가 커밋과 다르다 — 커밋한 뒤 실행하라")
 
     observations = []
-    for name, (path, input_rows) in splits.items():
-        upload = repository.put(
-            "paper-experiment",
-            content=path.read_bytes(),
-            format="jsonl",
-            encoding="utf-8",
-            original_filename=f"{name}.jsonl",
-        )
-        result = run_build(
-            build_spec(upload.upload_id, description="R2 소스 진화 안정성"),
-            client=None,
-            output_root=work_root / "runs",
-            run_id=f"r2-{name}",
-            owner_id="paper-experiment",
-            upload_repository=repository,
+    for generation in args.only or GENERATIONS:
+        record = build(generation, args.work_root)
+        record["paper_sha"] = paper_sha
+        observations.append(record)
+        print(
+            f"{generation:>12}: {record['status']:<6} rows {record['rows_in']:,} -> "
+            f"{record['rows_out']:,}  stage={record['failed_stage']}  ({record['seconds']}s)",
+            flush=True,
         )
 
-        output_rows, schema = 0, None
-        table_path = work_root / "runs" / f"r2-{name}" / "silver" / "trades" / "table.parquet"
-        if table_path.exists():
-            table = pl.read_parquet(table_path)
-            output_rows = table.height
-            schema = [[column, str(dtype)] for column, dtype in table.schema.items()]
-
-        observations.append(
-            {
-                "snapshot_id": name,
-                "status": result.status,
-                "input_rows": input_rows,
-                "output_rows": output_rows,
-                "schema": schema,
-            }
-        )
-        print(f"  {name}: {result.status}  {input_rows:,} -> {output_rows:,}행", flush=True)
-
-    target = args.work_root / "r2_observations.json"
+    target = args.work_root / (
+        "pilot_r2_observations.json" if args.pilot else "r2_observations.json"
+    )
     target.write_text(json.dumps(observations, ensure_ascii=False, indent=2), encoding="utf-8")
     print(f"관측 {len(observations)}건 -> {target}")
     return 0

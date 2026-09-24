@@ -2,8 +2,8 @@
 
 ## What is being compared
 
-The `monolithic` condition is the control for RQ2 (analytical effort) and RQ4
-(reproducibility). It transforms Bronze into the analysis input in a single
+The `monolithic` condition is the control for RQ2 (preparation code and
+recomputation cost). It transforms Bronze into the analysis input in a single
 pass, persisting no intermediate dataset:
 
 ```
@@ -17,9 +17,10 @@ The claim it supports is narrow and worth stating precisely:
 * ❌ **not** a comparison of transformation quality
 
 Medallion is not claimed to clean data better than a monolithic script. It is
-claimed to make the *next* analysis cheaper and the rebuild more deterministic.
-Every rule below exists to keep the first claim from quietly borrowing evidence
-from the second.
+compared on how much preparation code an analysis needs and on what
+recomputation costs when a layer is invalidated. Every rule below exists to keep
+that comparison from quietly borrowing evidence from a difference in
+transformation quality.
 
 ## The Baseline Bias threat
 
@@ -35,7 +36,7 @@ structural instead.
 
 `monolithic` is an ordinary `ConditionRunner`. It implements `prepare` and
 nothing else, is handed the same `RunContext`, and is measured by the same
-timer and the same code-metrics pass as every other condition. There is no
+code-metrics pass as every other condition. There is no
 branch anywhere in the harness that reads `if condition == "monolithic"`.
 
 `condition_layer("monolithic") == "bronze"`: the baseline starts from the same
@@ -81,7 +82,7 @@ compromise every number in the paper. A baseline that is *slightly better than
 realistic* has a known sign: it weakens our own hypothesis. RQ2 measures the
 structure of preparation — how many steps, how many functions, how much code a
 condition needs before analysis can begin — and importing a tested helper does
-not flatter that structure. If H2 holds against a flattered baseline, it holds.
+not flatter that structure. A difference that holds against a flattered baseline holds.
 
 This is reported in the paper rather than left in the repository: the baseline's
 `preprocessing_loc` excludes helper bodies it imports, exactly as the Medallion

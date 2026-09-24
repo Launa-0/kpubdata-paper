@@ -1,6 +1,6 @@
 """The condition-runner contract.
 
-Every measurement in the paper compares four *conditions* of the same task:
+Every task-run measurement (T1, T3) compares four *conditions* of the same task:
 
 ==============  =====================================================
 ``bronze``      minimally parsed source records
@@ -18,7 +18,7 @@ and nothing else. Instead of deciding after the fact which lines were
 code-metrics module measures exactly that method and its private helpers. The
 boundary is enforced by the interface.
 
-**Internal validity (RQ3).** If each condition were free to analyse differently,
+**Internal validity (equivalence gate).** If each condition were free to analyse differently,
 the comparison would be of analyses, not of data preparation. So ``analyze`` is
 *not* per condition: a task defines one analysis function that every condition
 is handed, unchanged. Conditions differ only in how they reach
@@ -152,10 +152,9 @@ class AnalysisInput:
 class AnalysisOutput:
     """The analytical result of a task, plus whatever it should be judged on.
 
-    ``result`` is the table the analysis produced (per-district trends, a set of
-    predictions, a jeonse-ratio series). ``metrics`` holds the task's correctness
-    numbers — RMSE, join matching rate, aggregate deviation — keyed by the names
-    used in the result schema.
+    ``result`` is the table the analysis produced (per-district trends, a
+    jeonse-ratio series). ``metrics`` holds task diagnostics — such as the join
+    matching rate — keyed by the names used in the result schema.
     """
 
     result: pd.DataFrame

@@ -32,30 +32,26 @@ Figure 3에 넣거나, 아파트 R2의 33%를 인용하는 식으로. **이슈�
 **잠금 (2026-09-24):** 이 개정 이후로는 **새 correctness 버그가 발견되지 않는 한 방법론
 문구를 고치지 않는다.** 나머지 동기화는 아래 "동결 전 일괄 동기화"에서 한 번에 한다.
 
-## 현재 작업 설계 — protocol freeze 전
+## 최종 설계 (동결, 2026-09-24)
 
-**아직 동결하지 않았다.** 아래는 지금까지의 결정이고, 최종 timing 프로토콜과
-`results/` 재생성은 동결 뒤에 한다.
+아래가 논문이 보고하는 설계다. 이 표가 바뀌려면 correctness 결함, provenance 오류, 또는
+측정값을 바꿀 수 있는 결함이 있어야 한다.
 
-| 축 | 실험 |
-|---|---|
-| Data standardization (RQ1) | 3개 데이터셋 Bronze -> Silver. **role × 전이 원인 셀 수가 primary** (`rq1_role_transition`, 원인은 결과 확인 전 사전 정의한 규칙 — `rq1-transition-classification.md`). 세대별 헤더 변화는 셀이 아니라 행 단위로 따로 (`rq1_coalesce_source`). aggregate change rate는 진단 |
-| Analytical preparation (RQ2) | T1 단일 데이터셋 집계·추세 |
-| Cross-dataset interoperability (RQ2) | T3 trades + rent join, 네 조건 |
-| Equivalence gate | 네 조건이 같은 분석 결과(`output_hash`)에 도달해야 RQ2 비용을 비교한다. Bronze ↔ Silver는 독립 검증, Silver ↔ Gold와 Bronze ↔ Monolithic은 구성상 동등 |
-| Recomputation / timing (RQ2) | T1·T3, 같은 엔진·포맷 통제, S1–S4 분리, raw 반복 저장, 조건 interleave — **재측정 예정** |
-| Frozen-source determinism | R1 — 기존 구현. 이번 구현 감사에서 재검증하지 않았다 — protocol freeze 전 재검증 예정 |
-| Source evolution | 따릉이 G1 / G2 / I1 / G3 / G4 |
-| Contract boundary | 통제된 perturbation (선언 부족 / 표현력 한계 / 구현 결함으로 분류) |
-| Storage trade-off | observed on-disk footprint + same-format controlled 비교 (반영 범위 검토 중) |
-| External validation | T3 공개 통계 대조는 **미실행**. 모집단·정의가 달라 primary에서 제외, 보조 방향 비교로 쓸지 미정 |
+| RQ | 질문 | 실험 | 결과 |
+|---|---|---|---|
+| **RQ1** contract-driven standardization | 계약 기반 표준화가 원천 표현을 무엇으로, 왜 바꾸는가 | 3개 데이터셋 Bronze → Silver. **role × 전이 원인 셀 수가 primary** (원인은 결과 확인 전 사전 정의한 규칙 — `rq1-transition-classification.md`). 세대별 헤더 수렴은 행 단위로 따로. 층별 비교 지표는 integrity check, aggregate change rate는 진단 | `rq1_role_transition`, `rq1_coalesce_source`, `rq1_role_pair`, `rq1_layer_quality` |
+| **RQ2** materialization trade-offs | 계층을 materialize하면 준비 코드와 재계산 비용이 어떻게 달라지는가 | 준비 코드: T1 단일 데이터셋 집계, T3 trades + rent join, 네 조건(B/S/G/M). LOC·function count가 primary, step 수는 진단. 재계산: T1·T3 × pandas/polars × S1–S4, materialized vs monolithic, 같은 Bronze Parquet 입력, warm-up 1 + 측정 5 interleave, paired ratio와 Δ | `experiment_results`, `timing_raw_*`, `timing_summary`, `timing_comparison` |
+| (RQ2 validity gate) | 네 조건이 같은 분석 결과에 도달하는가 | `output_hash` 일치가 RQ2 비용 비교의 전제다. RQ가 아니다. Bronze ↔ Silver는 독립 검증, Silver ↔ Gold와 Bronze ↔ Monolithic은 구성상 동등 | `experiment_results.output_hash` |
+| **RQ3** reproducibility and contract boundary | 고정 계약이 무엇을 재현하고 어디서 멈추는가 | R1: 같은 스냅샷·계약·빌더로 10회 재빌드. R2: 고정 계약 하나로 따릉이 G1 / G2 / I1 / G3 / G4와 통합본. Perturbation: 변형 51개, 의미 파괴 20개를 선언됨 / 표현 가능하나 미선언 / 현재 spec으로 표현 불가로 분류 | `r1_determinism`, `source_evolution`, `perturbation`, `perturbation_counterfactual` |
+| 보조 | 저장 발자국 | 같은 Parquet 조건(zstd 3, row group 131,072, 같은 writer)의 Bronze/Silver 크기. 본문 1문단, 상세는 부록 | `storage_footprint` |
 
-따릉이는 RQ1(전이)과 원천 진화·계약 경계 실험의 핵심 데이터셋으로 남는다. 별도
-downstream task인 T4는 두지 않는다.
+**하지 않는 것.** downstream task T2(예측)·T4(시계열)는 없다 (R-7). 외부 공개 통계 대조는
+실행하지 않았고 Threats/Future work에 한 줄로 남긴다 (R-3). user study는 없다
+(`user-study-exclusion.md`). 추론 통계(p-value, 신뢰구간, 효과 크기, 정규성 검정, 다중 비교
+보정)는 내지 않는다 (`statistics.md`, R-2).
 
-RQ2는 preparation code volume·complexity와 execution cost를 본다 (`analytical
-effort`가 아니다 — #54). RQ3는 correctness 우열이 아니라 analytical consistency를
-보는 equivalence gate다.
+**통계.** 기술통계뿐이다. timing 반복은 technical replicate이고, 셀 간 작은 차이(S3 대 S4,
+엔진 간 비율 차이)는 해석하지 않는다.
 
 ## 개정 목록 (색인)
 
@@ -66,13 +62,15 @@ effort`가 아니다 — #54). RQ3는 correctness 우열이 아니라 analytical
 | RQ1 duplicate | H1 primary | 저장 표현 위의 exact-row equality라 canonicalization이 값을 **올린다** | diagnostic으로 강등, 표시 분리 | 결과값은 스키마에 보존 | R-1 |
 | RQ1 headline | aggregate `representation_change_rate` | 계약의 `read_as` 컬럼을 role에 넣느냐에 따라 trades 0.238 ↔ 0.450, rent 0.225 ↔ 0.413 — 원천의 성질이 아니라 role 정의의 함수 | role × 전이 원인 표를 primary로, aggregate는 진단. coverage/preservation은 integrity check | 수치 불변, 표시 변경 | R-1 |
 | RQ1 측정 파서 | builder와 같다고 가정 | builder 실제 함수와 대조하니 null token·zfill 앞 공백 제거, 전각 숫자, `factorize`의 `1`/`1.0`/`True` 병합, coalesce의 null token 처리가 달랐다 | builder 동작에 맞춤 | 서울 3종 해당 값 0 — **결과 불변** | R-1 |
-| RQ2 runtime | 5회 -> median + paired inference | parquet에 median 1개만 저장되고 deterministic task는 seed 하나 — **n=1** | 1차: 기술통계만. 2차(번복): 같은 엔진·포맷 통제 재측정 | 기존 timing 수치 폐기 예정 | R-2 |
+| RQ2 runtime | 5회 -> median + paired inference | parquet에 median 1개만 저장되고 deterministic task는 seed 하나 — **n=1** | 1차: 기술통계만. 2차(번복): 같은 엔진·포맷 통제 재측정 | 기존 수치 폐기. 최종 수치는 `timing_*` (`920e019`) | R-2 |
 | RQ3 | 정제 계층이 correctness를 향상 | 네 조건이 같은 transform semantics를 공유하도록 **의도적으로** 통제됨 | equivalence gate (독립 / 구성상 동등 구분) | 코드 유지, 질문만 수정 | R-3 |
 | R2 | apartment 기간 분할 + `Null->String` | 전 기간 null이라 추론된 `Null`이 값이 생겨 `String`이 된 것은 semantic break가 아님 | 따릉이 G1/G2/I1/G3/G4 fixed-contract 실험 | **기존 33% 결과 폐기** | R-4 |
 | Task3 jeonse | null monthly rent를 0으로 취급 | "생략된 0"이라는 계약 근거 없음 | `eq(0)`만 전세, 결측은 unknown | 현 데이터 null 0건이라 **결과 불변** | R-5 |
-| Storage | storage amplification | Bronze JSONL vs Silver/Gold Parquet — layering이 아니라 codec을 잰다 | observed on-disk footprint (+ 통제 비교 검토) | 수치 유지, 해석 축소 | R-6 |
+| Storage | storage amplification | Bronze JSONL vs Silver/Gold Parquet — layering이 아니라 codec을 잰다 | same-format 통제 비교, 보조 결과(본문 1문단 + 부록) | amplification 폐기, Bronze/Silver 0.92–0.99 | R-6 |
 | Task scope | T1–T4 모두 full task | T2/T4 prediction 미구현 + 방법론 면적이 큼 | 1차: T1 / T3 + 축소 T4. 2차(번복): T4도 제외 | scope 변경 | R-7 |
 | Provenance | 이름 규칙·glob으로 artifact 해결 | 폐기 artifact를 조용히 측정할 수 있었음. 체크섬만으로 builder를 구분 못 함. Gold를 mtime으로 재사용 | snapshot / config / checksum / builder identity binding, Gold 매번 재빌드, 두 원천 합성 식별자 | 결과 불변 | R-8 |
+| RQ 구성 | RQ1–RQ4 + 가설 H1–H4 (품질 / analytical effort / correctness / reproducibility) | correctness 질문이 설계상 검증 불가능해졌고, analytical effort는 잰 적 없는 구성개념이었다 | RQ1 standardization / RQ2 materialization trade-offs / RQ3 reproducibility·contract boundary. equivalence는 RQ2 validity gate | 번호만 바뀜, 수치 불변 | R-9 |
+| 측정 코드 | runner가 runtime·memory를 재고 stats·radon·cyclomatic을 계산 | 최종 설계가 쓰지 않는 경로가 결과 스키마와 문서에 옛 주장을 남긴다 | timing은 `_timing.py`만, 쓰지 않는 코드 삭제, 식별자를 뜻으로 개명 | 수치 불변 | R-10 |
 
 ---
 
@@ -195,6 +193,9 @@ seoul-apartment-trades     21         5   1.000 -> 1.000 0.000 -> 0.000     1.00
 **영향**
 
 - 기존 timing 수치(0.024s vs 10.1s, 56–69s vs 8s, N* 5–9)는 폐기 예정. 방향만 참고한다.
+- **(최종)** 통제 재측정을 `920e019`(태그 `timing-measured-920e019`)에서 했다. 결과는
+  `results/timing_*`뿐이고 다시 재지 않는다. S1/S2에서는 materialized가, S3/S4에서는
+  monolithic이 빨랐고 16칸 모두 쌍 5개의 방향이 같다. break-even은 보고하지 않는다.
 
 ### R-3. RQ3 — correctness 향상 → equivalence gate
 
@@ -230,6 +231,9 @@ seoul-apartment-trades     21         5   1.000 -> 1.000 0.000 -> 0.000     1.00
   **구성상 기대되는 동등**이다.
 - 외부 참조는 primary validation에서 뺀다. 추세 방향의 보조 비교로 쓸지는 참조 정의를
   확인한 뒤 정한다. ground truth라 부르지 않는다.
+- **(최종)** 외부 참조 대조는 실험에서 제외한다. Threats/Future work에 한 줄로 남긴다.
+  수집해 둔 `snapshots/reference-jeonse-ratio/`는 어떤 결과에도 쓰이지 않는다.
+  equivalence gate는 RQ3이 아니라 RQ2의 validity 조건이 됐다 (R-9).
 
 **영향**
 
@@ -327,6 +331,9 @@ return monthly_rent_10k.eq(0)            # 현재
   Threats에 "계층별 저장 포맷이 달라 layering과 serialization/compression 효과를 분리하지
   못한다"를 명시한다. 버리지 않는다 — 실제 시스템 비용으로는 유효하다.
 - 통제 결과를 본문에 넣을지는 검토 중이다.
+- **(최종)** 통제 비교를 `scripts/storage_footprint.py`로 정식화하고, 포맷·코덱·writer가
+  같지 않으면 보고하지 않게 했다. canonical 값 Bronze/Silver 0.929 / 0.919 / 0.994.
+  본문 1문단, 상세는 부록 (`storage-tradeoff.md`).
 
 **영향**
 
@@ -401,27 +408,131 @@ return monthly_rent_10k.eq(0)            # 현재
 
 - 결과 불변. 측정이 어느 빌드를 읽었는지 말할 수 있게 됐다.
 
+### R-9. RQ 구성 — RQ1–RQ4 + H1–H4 → RQ 세 개
+
+**원래 설계**
+
+- RQ1 데이터 품질(H1: Silver가 품질을 높인다), RQ2 analytical effort(H2: Bronze > Silver >
+  Gold), RQ3 분석 correctness(H3), RQ4 재현성(H4). storage amplification을 trade-off로 보고.
+
+**문제 발견**
+
+- H1은 R-1에서, correctness 질문은 R-3에서 설계상 검증할 수 없게 됐다. RQ3에는 RQ2 비교의
+  전제(equivalence gate)만 남았다.
+- "analytical effort"는 사람의 노력을 뜻하는데 잰 것은 프로그램의 성질이다 (#54,
+  `user-study-exclusion.md`).
+- 번호가 남아 있으면 이슈·문서의 옛 문구가 현재 결과의 이름표로 쓰인다.
+
+**수정한 설계**
+
+- **RQ1 contract-driven standardization** — role × 전이 원인.
+- **RQ2 materialization trade-offs** — 준비 코드(LOC, function count)와 S1–S4 재계산 비용.
+  equivalence gate는 이 RQ의 validity 조건이지 별도 RQ가 아니다.
+- **RQ3 reproducibility and contract boundary** — R1, R2 따릉이 세대, perturbation 20개의
+  선언됨 / 표현 가능하나 미선언 / 표현 불가 분류.
+- 가설 H1–H4를 두지 않는다. storage는 RQ가 아니라 보조 결과다.
+
+**영향**
+
+- 번호와 이름만 바뀐다. 결과 수치는 바뀌지 않는다.
+
+### R-10. 측정 코드 — 쓰지 않는 경로를 지운다
+
+**원래 설계**
+
+- `runner.py`가 warm-up 1 + 5회로 runtime·peak memory를 재 결과 스키마에 넣었다. `stats.py`가
+  paired test·효과 크기·Holm을, `radon`이 cyclomatic complexity를 계산했다. 결과 스키마에
+  task02용 `mae`/`rmse`와 missing/duplicate/schema_validity가 있었다.
+
+**문제 발견**
+
+- 최종 설계는 이 값들을 하나도 쓰지 않는다. 남겨 두면 결과 파일과 문서가 폐기한 주장을
+  계속 싣고, 실행 비용이 두 곳(runner, timing)에서 서로 다른 프로토콜로 나온다.
+
+**수정한 설계**
+
+- 실행 비용의 SSOT는 timing 실험(`scripts/_timing.py`, `results/timing_*`) 하나다. runner는
+  `prepare`를 한 번 돌려 준비 코드와 `output_hash`만 기록한다.
+- `stats.py`, runtime·breakeven·reference·stability·storage metric 모듈, `radon`·`psutil`
+  의존성을 지운다. cyclomatic complexity는 진단으로만 쓰였고 논증에 쓰지 않았다.
+- overnight 감사에서 쓴 R2·perturbation·storage 스크립트를 설계 변경 없이
+  `scripts/r2_build.py`·`r2_report.py`, `perturbation.py`, `storage_footprint.py`로 옮겼다.
+- 식별자를 표 번호가 아니라 뜻으로 부른다: `H1_COMPARABLE_METRICS` → `INTEGRITY_METRICS`,
+  `H1_DIAGNOSTIC_METRICS` → `DIAGNOSTIC_METRICS`, `TABLE2_METRICS` → `LAYER_QUALITY_METRICS`,
+  `table3` → `preparation_code_table`.
+
+**영향**
+
+- 남은 측정의 수치는 바뀌지 않는다. 결과 스키마에서 쓰지 않는 열이 빠졌다.
+
 ---
 
-## 동결 전 일괄 동기화 (TODO)
+## 최종 실행과 provenance
 
-아래는 **timing 전에 하나씩 고치지 않는다.** timing 결과가 나온 뒤 protocol freeze 때 한
-번에 현재 설계로 맞춘다.
+| 무엇 | 커밋 | 비고 |
+|---|---|---|
+| 빌더 | `096d023` | 태그 `paper-eval-builder-096d023`, 버전 `0.4.0.dev0+096d023f9546` |
+| timing 측정 코드 | `920e019` | 태그 `timing-measured-920e019`. 원자료의 `paper_sha`는 이 값이다 |
+| canonical 실행 코드 (timing 제외 결과 전부) | `4fcca24` | `scripts/canonical.sh`, clean tree |
+| 결과 파일 최초 커밋 | `99ab145` | `results/canonical_manifest.json`이 파일 hash를 묶는다 |
+| 표·그림 | `154d83d` | `scripts/paper_tables.py`, `paper_figures.py` — 결과를 다시 재지 않는다 |
 
-- `statistics.md` 전체 (runtime 부분, "four tasks / three datasets" 등 옛 범위 서술)
-- `required-columns.md` 등 legacy scope 문서의 restaurant / T1–T4 흔적
-- `Analytical Effort` 명칭, task02용 schema field, 옛 Table/Figure 번호, T4라는 과거
-  snapshot 명칭
-- 최종 RQ 문구, Table/Figure, Threats, 최종 `results/`
-- R1 재검증
+실행 코드 커밋과 결과를 커밋한 커밋은 다른 것이다. 결과 행에 적힌 커밋은 앞의 것이다.
+
+**stack merge로 바뀐 SHA.** #58 / #59 / #61을 merge commit으로 합치면서 GitHub가 하위 브랜치를
+rebase해 커밋 SHA가 바뀌었다. tree는 같다. 원자료에 기록된 `paper_sha`는 고치지 않는다.
+
+| 기록된 SHA | main의 SHA | tree |
+|---|---|---|
+| `4a87ef7` | `6208523` | `ece5cfe6` |
+| `920e019` (timing 측정, 태그) | `c32035e` | `99427c58` |
+| `48794e7` | `7066a82` | `3a071298` |
+| `0790742` | `4cbc066` | `69eaa80` |
+
+**R1 재검증.** canonical 실행 전에 `0790742` + 빌더 `096d023`에서 R1을 다시 돌렸다. 10/10 성공,
+digest 1개, 행·스키마 동일, canonical `trades-silver-001`과 byte 동일, 체크섬 `ce8012cc…`이
+provenance 기록과 같았다. canonical 실행(`4fcca24`)의 R1도 같은 결과다. 빌더 `5d86eed` →
+`096d023` 사이에 이 Silver 바이트는 바뀌지 않았다.
+
+### Canonical 실행
+
+timing을 뺀 최종 결과는 논문 커밋 `4fcca24`, 빌더 `096d023`(`paper-eval-builder-096d023`)에서
+`scripts/canonical.sh`로 한 번 만들었다. clean tree에서 14단계가 모두 성공했고, timing 결과
+파일은 실행 전후 sha256이 같다.
+
+- 행 단위 결과 스키마에는 builder / config / build provenance가 들어 있다. 논문 커밋과 결과
+  파일 hash는 `results/canonical_manifest.json`에 적었다 (`scripts/canonical_manifest.py`가
+  실행 identity와 결과 파일에서 만든다).
+- 실행에 쓴 driver와 레포의 `scripts/canonical.sh`는 첫 `cd` 줄만 다르다. 실행본은 절대경로로,
+  레포본은 스크립트 위치 기준으로 이동한다.
+- 이전 파일 대비 달라진 값은 하나다. RQ1 `rq1_role_pair`의 `deal_date`·`contract_date`
+  `representation_change_rate`가 0에서 1.0이 됐다. **측정 로직 수정에 따른 변화**다. Silver
+  바이트와 config는 같고, 이전 파일은 날짜 투영 수정 전 harness에서 나왔다
+  (`rq1-transition-classification.md`). 현재 분류기의 `rq1_role_transition`과는 불일치가 0이다.
+- Perturbation은 의미가 깨지는 변형 20개 중 12 reject / 8 silent pass다. `5d86eed` 기준 11 / 9에서
+  T-B09가 reject로 바뀐 것은 이번 실행에서 생긴 변화가 아니다. 빌더 correctness 수정이 들어간
+  `096d023`에서 이미 그랬고, 이번 실행은 그것을 재현했다.
+
+## 동결 후 일괄 동기화 (완료)
+
+timing 결과가 나온 뒤 한 번에 현재 설계로 맞췄다.
+
+- `statistics.md` — 추론 통계 없는 짧은 현재 문서로 다시 씀
+- `storage-tradeoff.md` — amplification을 걷어내고 부록 원문으로 다시 씀
+- `code-metrics.md`, `monolithic-baseline.md`, `runner-contract.md`, `user-study-exclusion.md`,
+  `required-columns.md` — H1–H4, RQ4, runtime, cyclomatic, restaurant 흔적 제거
+- 따릉이 문서 — 과거 이름 T4를 통합본으로 (스냅샷·run id의 이름은 그대로)
+- README, `scripts/README.md` — 최종 RQ와 재현 절차
+- 최종 `results/`, 표·그림, R1 재검증
 
 ## 같이 맞춰야 하는 것
 
 이 문서만으로는 부족하다.
 
-- **Epic #1** — 과거 설계가 아니라 현재 SSOT만 유지한다. RQ/Task matrix를 위 표로 갱신.
+- **Epic #1** — 과거 설계가 아니라 현재 SSOT만 유지한다. RQ/Task matrix를 "최종 설계" 표로 갱신.
 - **관련 이슈·PR (#8 #16 #18 #19 #21 #22 #23 #25)** — 본문을 뜯어고쳐 원안을 지우지
   말고, 짧게 남긴다: *Final methodology superseded the original issue wording; see
   `experiment-design-revisions.md`*.
-- **#22 Figure 3 / #23 Table 2** — 현재 정의가 개정 이전이다. `duplicate_rate`가 아직
-  품질 개선 지표로 적혀 있어, 그대로 생성하면 폐기한 주장이 그림으로 되살아난다.
+- **#22 / #23** — 옛 그림·표 정의(`duplicate_rate`를 품질 개선 지표로 그림)는 폐기됐다.
+  최종 표·그림은 `tables/`, `figures/`에 있고 `scripts/paper_tables.py`,
+  `paper_figures.py`가 만든다.

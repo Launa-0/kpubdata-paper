@@ -2,9 +2,8 @@ r"""Pairing the two layers on one role: what changed, and did it still mean the 
 
 With both layers projected onto the same roles, the comparable metrics come out
 flat — Bronze read with the contract's own parsers is as type-consistent and as
-conformant as Silver, because the values are the same values. That is the honest
-result, and it leaves H1 with nothing to show unless the measurement asks a
-different question.
+conformant as Silver, because the values are the same values. Those metrics are
+an integrity check, equal by construction for a successful build.
 
 The question worth asking is not *which layer is cleaner* but **what
 standardization actually did**:
@@ -16,15 +15,16 @@ standardization actually did**:
 ``semantic_preservation_rate``
     Where both sides can be read at all, do they mean the same thing?
 
-The two together say: *Silver rewrote this share of the values and changed the
-meaning of none of them.* Neither number alone is worth much — a pipeline that
-rewrote nothing would preserve everything, and one that rewrote everything into
-nulls would also look busy.
+Neither is RQ1's primary result. The change rate is a diagnostic footprint and
+preservation is an integrity check; what RQ1 reports is **why** each cell changed,
+as role × transition-cause counts from :func:`pair_and_classify`, with causes
+assigned by rules fixed before the results were seen
+(``docs/rq1-transition-classification.md``).
 
 What a change rate is not
 -------------------------
 
-``representation_change_rate`` is **not** analyst effort. One vectorised cast
+``representation_change_rate`` is **not** preparation cost. One vectorised cast
 rewrites a million cells; a different million cells might cost one line each.
 The share of values that had to be normalised is a descriptive footprint of this
 source *under the evaluated contract and role definition* — not a property of the
@@ -39,7 +39,7 @@ Coverage is reported, not assumed
 
 A Bronze value the contract's own parser cannot read has no meaning to preserve.
 Scoring it as preserved because both sides end up ``None`` would let unreadable
-input inflate the very number that is supposed to defend the pipeline. Those
+input inflate the integrity check. Those
 cells are excluded from the preservation rate and counted in
 ``semantic_coverage_rate`` instead, so the claim is always "of the values that
 could be read", with the remainder stated.
@@ -239,6 +239,9 @@ def assert_row_identity(
     and would still produce a change rate. So the required roles — identifier,
     time and main fact — must read the same on every row before anything is
     paired.
+
+    The guard sees only the required roles, so it cannot catch two rows swapped
+    between records whose required roles read the same.
 
     This is a precondition, not a finding. Once it passes, the required roles'
     ``semantic_preservation_rate`` is 1.0 by construction and says nothing on

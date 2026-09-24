@@ -6,7 +6,7 @@ from kpx.metrics.reproducibility import (
     BuildOutcome,
     ReproducibilityError,
     measure_reproducibility,
-    table5,
+    reproducibility_table,
 )
 
 
@@ -79,7 +79,7 @@ class TestFailedBuildsDoNotManufactureEquality:
 
 class TestTable5:
     def test_one_row_per_condition_with_success_rate_beside_equality(self) -> None:
-        frame = table5(
+        frame = reproducibility_table(
             {
                 "medallion": measure_reproducibility([ok()] * 10),
                 "monolithic": measure_reproducibility([ok()] * 9 + [failed()]),
@@ -98,6 +98,6 @@ class TestTable5:
         ]
 
     def test_a_condition_with_no_verdict_prints_a_dash_not_false(self) -> None:
-        frame = table5({"monolithic": measure_reproducibility([failed()] * 3)})
+        frame = reproducibility_table({"monolithic": measure_reproducibility([failed()] * 3)})
 
         assert frame.loc[0, "SHA-256 equal"] == "—"

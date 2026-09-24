@@ -1,7 +1,7 @@
 .PHONY: install lint typecheck test check clean
 
 install:
-	uv sync --extra dev --extra analysis --extra figures
+	uv sync --extra dev --extra figures
 
 lint:
 	uv run ruff check src tests

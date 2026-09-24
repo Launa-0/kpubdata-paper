@@ -62,7 +62,7 @@ The Baseline Bias threat is that a deliberately clumsy baseline manufactures the
 result. The harness removes the opportunity:
 
 * `monolithic` is an ordinary `ConditionRunner`. It gets no different treatment
-  from the runner, the timer, or the metrics.
+  from the runner or the metrics.
 * `condition_layer("monolithic") == "bronze"` — it starts from the same input as
   the Medallion path rather than from a handicapped one.
 * It reuses the same transformation helpers as the Silver and Gold
@@ -81,8 +81,10 @@ with ctx.step("normalize_district"):
     ...
 ```
 
-This yields a per-step time breakdown and a readable trace of what each condition
-actually had to do — the qualitative material for the Results section.
+This yields a readable trace of what each condition actually had to do — the
+qualitative material for the Results section. (Steps are also timed, but those
+times are not reported; execution cost comes only from the timing experiment in
+`scripts/_timing.py`.)
 
 Steps may nest; only top-level steps are counted. A step may bracket any amount
 of sub-work: `normalize_columns` stays one step however many sub-operations it
@@ -109,7 +111,7 @@ A runner takes every input from `RunContext`:
 | `snapshot_id` | which frozen source this run used |
 | `pipeline_version` | which builder version produced the layers |
 | `datasets` | a `DatasetResolver`; runners never hard-code a path |
-| `seed` | random seed, for the model tasks |
+| `seed` | always 0 — both tasks are deterministic; kept so the run key stays complete |
 | `params` | task-specific parameters |
 | `recorder` | step recorder, or `None` outside a measured run |
 
