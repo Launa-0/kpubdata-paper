@@ -3,16 +3,33 @@
 set -euo pipefail
 cd "$(dirname "$0")/.."
 export PYTHONIOENCODING=utf-8 PYTHONUTF8=1
-KPX=.venv/Scripts/python.exe
-BUILDER=../../kpubdata-builder/.venv/Scripts/python.exe
+
+# venv 의 인터프리터 경로는 플랫폼마다 다르다(POSIX: bin/, Windows: Scripts/).
+_venv_python() {
+  local root=$1
+  for candidate in "$root/.venv/bin/python" "$root/.venv/Scripts/python.exe"; do
+    [ -x "$candidate" ] && { printf '%s' "$candidate"; return 0; }
+  done
+  echo "no virtualenv interpreter under $root/.venv" >&2
+  return 1
+}
+# 두 환경은 함께 import 될 수 없다 — $BUILDER 는 096d023 의 kpubdata-builder,
+# $KPX 는 이 저장소다. 경로는 밖에서 덮어쓸 수 있다.
+#
+# 예전에는 Windows 경로(.venv/Scripts/python.exe)가 하드코딩돼 있어서 README 가
+# 설명하는 $KPX/$BUILDER 변수가 무시됐고, Linux/macOS 의 clean clone 에서는
+# 0단계부터 돌지 않았다.
+BUILDER_REPO="${BUILDER_REPO:-../../kpubdata-builder}"
+KPX="${KPX:-$(_venv_python .)}"
+BUILDER="${BUILDER:-$(_venv_python "$BUILDER_REPO")}"
 TRADES=seoul-apartment-trades/20260922-6660c8e25162
 RENT=seoul-apartment-rent/20260923-a0ed9577c41a
 BIKE=seoul-bike-rent-month/20260923-637ec21bb5b1
 LOG=.build/canonical
 mkdir -p $LOG
 test -z "$(git status --porcelain --untracked-files=no)" || { echo "dirty paper tree"; exit 1; }
-test -z "$(git -C ../../kpubdata-builder status --porcelain)" || { echo "dirty builder tree"; exit 1; }
-echo "paper $(git rev-parse --short HEAD) builder $(git -C ../../kpubdata-builder rev-parse --short HEAD)" > $LOG/00_identity.txt
+test -z "$(git -C "$BUILDER_REPO" status --porcelain)" || { echo "dirty builder tree"; exit 1; }
+echo "paper $(git rev-parse --short HEAD) builder $(git -C "$BUILDER_REPO" rev-parse --short HEAD)" > $LOG/00_identity.txt
 step() { local name=$1; shift; echo "[$(date +%H:%M:%S)] start $name"; "$@" > "$LOG/$name.log" 2>&1; echo "[$(date +%H:%M:%S)] done  $name"; }
 step 01_silver_trades $BUILDER scripts/build_silver.py $TRADES --spec trades
 step 02_silver_rent   $BUILDER scripts/build_silver.py $RENT --spec rent

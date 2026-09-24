@@ -14,7 +14,7 @@
     "source_evolution.csv": "3ca6821e23a5e0c1af42d8f204774e2728d5b729a53c5c413716a82e1b7ce2fc",
     "storage_footprint.csv": "d22561b07f2002d0850a20231f6e9bbe3a2bc78d6a9f5a022d03760679a02f6b",
     "perturbation.parquet": "65e83ae69fb5b9ec055a06ddc49d7a41cf08bf49e24feab2fc65ff427657b094",
-    "perturbation_counterfactual.json": "6eaa7350229905441d5005e429daa30be812d332db3f5122f566f38f06d56371",
+    "perturbation_counterfactual.json": "29812fdbb89c8e143eacebb804e7beee8c8155eafab4a896583ccdea60c9d4a7",
     "r1_determinism.csv": "9cccbd8071c0b45c4a018db87ec8afe43c2a8d1a6dde97b81a9e8a2c7ce97c4d"
   }
 }

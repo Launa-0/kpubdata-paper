@@ -60,8 +60,12 @@ How it came to be this way is recorded in
 - **RQ1.** Share of role cells whose representation changed: trades 0.238,
   rent 0.225, bike 0.568, from primitive type normalization, numeric formatting,
   identifier padding, date/year-month normalization, null canonicalization and
-  derived fields. Layer comparison metrics are equal on both sides by
-  construction.
+  derived fields. Layer comparison metrics are integrity checks, not evidence of
+  improvement — and they are not all equal on both sides. `duplicate_rate` in
+  particular *rises* under canonicalization, because two rows that mean the same
+  thing but spell a missing value differently are distinct in Bronze and
+  identical in Silver
+  ([`docs/bike-generation-runs.md`](docs/bike-generation-runs.md#duplicate_rate는-비교-지표가-아니다)).
 - **RQ2.** Silver and Gold need less preparation code than Bronze and
   monolithic (T1 LOC 12 / 2 against 20 / 16; T3 34 / 2 against 50 / 46), with
   every condition passing the equivalence gate. Materialized recomputation was
