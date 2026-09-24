@@ -1,4 +1,4 @@
-task,condition,rows,preprocessing_loc,function_count,transformation_steps,output_hash,equivalence,join_matching_rate
+task,condition,prepared_rows,preprocessing_loc,function_count,transformation_steps,output_hash,equivalence,join_matching_rate
 task01,bronze,1500,20,6,7,bc8896c454ab,PASS,
 task01,silver,1500,12,3,3,bc8896c454ab,PASS,
 task01,gold,1500,2,0,0,bc8896c454ab,PASS,

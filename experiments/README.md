@@ -92,6 +92,12 @@ experiments/
 └── docs/        # design notes, one decision each
 ```
 
+`snapshots/reference-jeonse-ratio/`는 **수집만 해두었고 어떤 결과에도 쓰이지
+않는다.** 외부 통계와의 대조는 최종 설계에서 제외됐다 — 전세가율은 정의를 어떻게
+잡느냐(보증금/매매가의 분모·시점·거래 필터)에 따라 값이 3.6%p 움직여서, 차이가
+파이프라인 때문인지 정의 때문인지 분리할 수 없다. 자세한 사유는
+`docs/experiment-design-revisions.md`에 있다.
+
 | result file | grain | written by |
 |---|---|---|
 | `rq1_role_transition.parquet` | dataset × role × transition cause | `quality_spectrum.py` |
