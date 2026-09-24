@@ -17,16 +17,20 @@ import inspect
 import sys
 import time
 from pathlib import Path
+from typing import Any
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
+import _builder_identity  # noqa: E402
 import pandas as pd  # noqa: E402
 from _paths import DEFAULT_WORK_ROOT, SNAPSHOTS, snapshot_source  # noqa: E402
+from rent_spec import SPEC as RENT_SPEC  # noqa: E402
+from trades_spec import SPEC as TRADES_SPEC  # noqa: E402
 
 from kpx.datasets import LayerStore  # noqa: E402
 from kpx.metrics.runtime import MEASURED_RUNS, WARMUP_RUNS  # noqa: E402
-from kpx.pipeline import record_joined_layer  # noqa: E402
-from kpx.provenance import Provenance, ProvenanceStore  # noqa: E402
+from kpx.pipeline import bind_measured_artifact, record_joined_layer  # noqa: E402
+from kpx.provenance import Provenance, ProvenanceError, ProvenanceStore  # noqa: E402
 from kpx.results import default_store  # noqa: E402
 from kpx.runner import run_condition  # noqa: E402
 from kpx.tasks.task03_join import TASK  # noqa: E402
@@ -80,17 +84,29 @@ def build_gold(trades_path: Path, rents_path: Path, gold_path: Path) -> float:
     return elapsed
 
 
-def latest_silver(builds: ProvenanceStore, dataset: str, snapshot_id: str) -> Provenance:
-    recorded = builds.list_builds(dataset, "silver")
-    if not recorded:
-        raise SystemExit(f"{dataset}의 silver 빌드 기록이 없다 (scripts/record_builds.py).")
-    build = recorded[-1]
-    if build.inputs.snapshot_id != snapshot_id:
+def bound_silver(
+    builds: ProvenanceStore, spec: dict[str, Any], snapshot_id: str, run_dir: Path
+) -> Provenance:
+    """이 run 디렉터리의 Silver 바이트가 어느 기록된 빌드인지 확정한다.
+
+    "가장 최근에 기록된 빌드"를 집지 않는다. 다른 스냅샷이나 다른 빌더의 빌드가
+    나중에 기록되면 틀린 기록을 집고, 수정 전후 빌더처럼 같은 바이트를 낸 빌드는
+    체크섬으로 구분되지 않는다 — 스냅샷·계약·체크섬·빌더 신원을 모두 맞춘다.
+    """
+    if snapshot_id != spec["snapshot_id"]:
         raise SystemExit(
-            f"기록된 {dataset} silver는 {build.inputs.snapshot_id}에서 나왔는데 "
+            f"{spec['dataset_id']} spec은 {spec['snapshot_id']}를 선언하는데 "
             f"{snapshot_id}로 측정하려 한다."
         )
-    return build
+    try:
+        return bind_measured_artifact(
+            run_dir / "silver" / spec["source"]["alias"],
+            spec={**spec, "run_id": run_dir.name},
+            store=builds,
+            builder_version=_builder_identity.version_of(run_dir),
+        )
+    except ProvenanceError as error:
+        raise SystemExit(f"{error}\n먼저 scripts/record_builds.py를 실행하라.") from error
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -118,8 +134,8 @@ def main(argv: list[str] | None = None) -> int:
     store_root = args.datasets or Path(__file__).resolve().parents[1] / "datasets"
     builds = ProvenanceStore(store_root)
     upstreams = [
-        latest_silver(builds, TRADES, args.trades_snapshot_id),
-        latest_silver(builds, RENTS, args.rent_snapshot_id),
+        bound_silver(builds, TRADES_SPEC, args.trades_snapshot_id, runs / args.trades_run_id),
+        bound_silver(builds, RENT_SPEC, args.rent_snapshot_id, runs / args.rent_run_id),
     ]
 
     newest = max(trades_silver.stat().st_mtime, rents_silver.stat().st_mtime)
@@ -154,8 +170,8 @@ def main(argv: list[str] | None = None) -> int:
 
     results = default_store(args.results)
     if args.fresh:
-        for path in (results.path, results.csv_path):
-            path.unlink(missing_ok=True)
+        # 이 과제의 행만 지운다 — 파일째 지우면 T1 결과가 함께 사라진다.
+        results.drop_task(TASK.name)
 
     inherited = gold_build.run_fields
     rows = []
