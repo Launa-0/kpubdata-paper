@@ -152,12 +152,16 @@ def rq2_preparation(results: pd.DataFrame) -> pd.DataFrame:
             for t, h in zip(results["task"], results["output_hash"], strict=True)
         ],
         output_hash=results["output_hash"].str[:12],
+        # 이 열은 원천 레코드 수가 아니라 준비 산출물의 행 수다 — T1/T3은 25개 구 ×
+        # 60개월로 집계되어 1,500행이 된다. "rows"라고만 적으면 표만 읽는 사람이
+        # 1,500건을 표본 크기로 읽는다.
+        prepared_rows=results["rows"],
     )
     return frame[
         [
             "task",
             "condition",
-            "rows",
+            "prepared_rows",
             "preprocessing_loc",
             "function_count",
             "transformation_steps",
@@ -322,7 +326,9 @@ def main(argv: list[str] | None = None) -> int:
         (
             "rq2_preparation",
             rq2_preparation(read("experiment_results.parquet")),
-            "equivalence는 Silver 조건의 output_hash와 같은지다.",
+            "equivalence는 Silver 조건의 output_hash와 같은지다. "
+            "prepared_rows는 원천 레코드 수가 아니라 준비 산출물의 행 수다 — "
+            "T1/T3은 25개 자치구 × 60개월로 집계되어 1,500행이 된다.",
         ),
         (
             "rq2_timing",

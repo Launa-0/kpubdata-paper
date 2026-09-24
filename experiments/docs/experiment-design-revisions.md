@@ -525,6 +525,21 @@ timing 결과가 나온 뒤 한 번에 현재 설계로 맞췄다.
 - README, `scripts/README.md` — 최종 RQ와 재현 절차
 - 최종 `results/`, 표·그림, R1 재검증
 
+## 동결 이후 builder 계약 언어의 확장 (결과는 동결 유지)
+
+결과를 동결한 뒤 builder에 Silver 변환 계약이 넓어졌다 — `rename`/`derived`
+(#612), `read_as`/`null_tokens` (#614), `coalesce`/`zfill`/`year_month` (#621),
+`column_null_tokens` (#624).
+
+perturbation 분류에서 **"현재 spec으로 표현 불가" 3건은 이제 표현 가능할
+수 있다.** 다만 이 문서는 그 가능성만 적고, 재분류하지 않는다 — canonical
+결과(`4fcca24`, builder `096d023`)는 동결됐고, 확장된 계약 언어는 그 시점
+이후의 builder다. 동결된 숫자를 나중의 도구로 다시 세면 그 숫자가 무엇을
+측정한 것인지 말할 수 없게 된다.
+
+재분류하려면 builder를 새 커밋으로 올려 실험 전체를 다시 돌리고, 그 결과를
+별도의 동결 지점으로 기록해야 한다. 원고에서는 다루지 않는다.
+
 ## 같이 맞춰야 하는 것
 
 이 문서만으로는 부족하다.
