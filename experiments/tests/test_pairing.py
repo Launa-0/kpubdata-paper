@@ -157,7 +157,7 @@ def test_zfill_pads_the_value_as_stored_like_the_builder_does() -> None:
     assert _pair(STATION, [" 3"], ["00003"]).semantic_preserved_count == 0
 
 
-# -- 전이 원인 (overnight/rq1-transition/PRE_ANALYSIS.md 11절, 결과 보기 전 고정) --------
+# -- 전이 원인 (docs/rq1-transition-classification.md, 결과 보기 전 고정) -----------------
 
 
 def _causes(role, bronze_values, silver_values):

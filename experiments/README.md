@@ -26,7 +26,7 @@ experiments/
 ├── tests/
 ├── datasets/             # built dataset artifacts (bytes git-ignored, provenance committed)
 ├── snapshots/            # frozen source snapshots + metadata
-├── results/              # experiment_results.parquet (committed)
+├── results/              # experiment_results.parquet + rq1_*.parquet (committed)
 └── figures/              # generated figures (committed)
 ```
 
@@ -125,9 +125,12 @@ report = check_baseline_equivalence(
 report.raise_for_status()
 ```
 
-The check is applied to `monolithic` only. `bronze`, `silver` and `gold` are
-allowed to disagree with each other — they read layers of differing quality, and
-that difference is what RQ3 measures.
+The check is applied to `monolithic` only, because it is the one condition that
+claims to do the same work by another route. All four conditions are still held
+to the same analysis result by each task's tests and the runs' `output_hash` —
+an equivalence gate, not a finding. Bronze ↔ Silver agreement is independent
+(harness parsers vs builder casts); Silver ↔ Gold and Bronze ↔ Monolithic agree
+by construction. See `docs/monolithic-baseline.md`.
 
 ## Snapshots
 
@@ -173,9 +176,21 @@ pull made in March 2026 may cover 2020–2024, and Table 1 needs both.
 
 ## Results
 
-Every run appends one row to `results/experiment_results.parquet`, and Tables
-1–5 and Figures 1–5 are regenerated from that file alone. A reader who never
-runs the pipeline sees only this file, so it has to be trustworthy by itself.
+Results live in two families of files under `results/`, because they have
+different grains:
+
+| File | Grain | Written by | Feeds |
+|---|---|---|---|
+| `experiment_results.parquet` | one task run: (task, condition, seed) | `run_task01.py`, `run_task03.py` | T1/T3 condition-level measurements (RQ2, equivalence gate) |
+| `rq1_role_transition.parquet` | role × transition cause, cells | `quality_spectrum.py` | **RQ1 primary table** |
+| `rq1_coalesce_source.parquet` | coalesced role × source column, rows | `quality_spectrum.py` | RQ1 schema transitions (kept out of the cell denominator) |
+| `rq1_role_pair.parquet` | role, counts of changed / comparable / preserved cells | `quality_spectrum.py` | RQ1 diagnostics and integrity checks |
+| `rq1_layer_quality.parquet` | layer view × quality metric | `quality_spectrum.py` | RQ1 integrity check (Bronze semantic vs Silver) |
+
+The RQ1 files measure an artifact pair, not a run, so they do not fit the run
+schema. Builds (R1, R2) are counted in the provenance store, not here. A reader
+who never runs the pipeline sees only these files, so each has to be
+trustworthy by itself.
 
 ```python
 store = default_store()
@@ -577,7 +592,7 @@ What Task 3 does measure:
 | | |
 | :--- | :--- |
 | RQ2 | the preprocessing cost of reaching a correct join — Bronze builds both datasets' keys itself, Silver only derives and joins, Gold does neither |
-| RQ3 | whether all four conditions reach the **same** jeonse ratio. Gold's join happened at pipeline time, so a Gold disagreement means the pipeline joined by a different rule than the analysis — the point where layering can silently change a result |
+| Equivalence gate | all four conditions must reach the **same** jeonse ratio (`output_hash`) before any RQ2 cost is compared. Bronze ↔ Silver is independent; Silver ↔ Gold and Bronze ↔ Monolithic agree by construction |
 | | `invalid_key_rate`: rows Bronze and monolithic must find and drop themselves |
 
 An equal matching rate is a null result, but an honest one, and it is usable
@@ -615,10 +630,10 @@ as each experiment lands:
 3. **Run the tasks.** Each task runs under all four conditions; model tasks
    repeat over 5 random seeds and runtime measurement uses 1 warm-up plus 5
    measured runs.
-4. **Collect results.** Every run appends one row to
-   `results/experiment_results.parquet`.
-5. **Generate tables and figures.** Tables 1–5 and Figures 1–5 are regenerated
-   from that file alone.
+4. **Collect results.** Every task run appends one row to
+   `results/experiment_results.parquet`; the RQ1 measurement writes the
+   `results/rq1_*.parquet` tables (see *Results*).
+5. **Generate tables and figures** from those files alone.
 
 A run is fully described by `(task, condition, snapshot_id, pipeline_version,
 seed)`. Anything a runner needs comes from `RunContext`, never from module-level

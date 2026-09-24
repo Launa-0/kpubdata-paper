@@ -1,9 +1,10 @@
 """The experiment result schema and the store that holds it.
 
-Every number in the paper comes from one row of ``results/experiment_results``.
-Tables 1–5 and Figures 1–5 are regenerated from that file alone, so the file has
-to be trustworthy on its own — a reader who never runs the pipeline sees only
-this.
+Every **task-run** number in the paper (T1/T3, per condition) comes from one row
+of ``results/experiment_results``, so the file has to be trustworthy on its own
+— a reader who never runs the pipeline sees only this. RQ1's artifact-pair
+measurements live in separate ``results/rq1_*.parquet`` tables (see the Storage
+section below).
 
 Two rules follow, and the schema exists to enforce them.
 
@@ -38,10 +39,13 @@ successful experiment than the one that was run.
 Storage
 -------
 
-``experiment_results.parquet`` is authoritative; ``experiment_results.csv`` is
-written beside it on every append so that the committed results have a readable
-diff. Both are committed: they are what makes the benchmark reproducible for a
-reader who does not rerun the pipeline.
+``experiment_results.parquet`` is authoritative for **task runs**;
+``experiment_results.csv`` is written beside it on every append so that the
+committed results have a readable diff. RQ1 does not go through this store: it
+measures an artifact pair rather than a run, and ``scripts/quality_spectrum.py``
+writes its own ``rq1_*.parquet`` tables (the README's *Results* section lists
+which file feeds which table). Both families are committed: they are what makes
+the benchmark reproducible for a reader who does not rerun the pipeline.
 """
 
 from __future__ import annotations

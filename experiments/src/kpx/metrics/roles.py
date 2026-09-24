@@ -33,8 +33,9 @@ Projection is structural: it answers *which column holds this role here*.
 Interpretation is semantic: it answers *what this value means*. Keeping them
 apart is what lets the same projected frame be read two ways — once with the
 interpretation the pipeline itself applies (:data:`INTERPRETERS`, keyed by the
-cast the contract declares) and once as stored. The first is the H1 comparison;
-the second shows what an analyst meets with no preparation at all.
+cast the contract declares) and once as stored. The first is the layer
+comparison; the second is a sensitivity view of a reader the contract has not
+configured — not a measure of any analyst's effort.
 """
 
 from __future__ import annotations
@@ -275,7 +276,7 @@ def project(frame: pd.DataFrame, roles: Sequence[Role], *, layer: str) -> pd.Dat
                 )
             columns[role.name] = _join_parts(frame, present)
         elif role.projection == "coalesce":
-            columns[role.name] = _coalesce(frame, present)
+            columns[role.name] = _coalesce(frame, present, role.null_tokens)
         else:
             columns[role.name] = frame[present[0]]
     return pd.DataFrame(columns, index=frame.index)
@@ -288,7 +289,8 @@ def coalesce_sources(frame: pd.DataFrame, roles: Sequence[Role]) -> list[dict[st
     a cell rewrite: the value under ``대여년월`` is the same kind of value that
     used to sit under ``대여일자``. So it is counted in rows per source column,
     beside the cell-level causes rather than in their denominator. ``source`` is
-    ``None`` for rows where no candidate held a value.
+    ``None`` for rows where no candidate held a value — a declared null token is
+    not a value, because the builder nulls it before coalescing.
     """
     counts: list[dict[str, Any]] = []
     for role in roles:
@@ -298,7 +300,7 @@ def coalesce_sources(frame: pd.DataFrame, roles: Sequence[Role]) -> list[dict[st
         for column in role.bronze:
             if column not in frame.columns:
                 continue
-            supplied = remaining & frame[column].notna()
+            supplied = remaining & _holds_value(frame[column], role.null_tokens)
             if supplied.any():
                 counts.append({"role": role.name, "source": column, "rows": int(supplied.sum())})
             remaining &= ~supplied
@@ -333,11 +335,25 @@ def _column_null_tokens(contract: Mapping[str, Any]) -> dict[str, tuple[str, ...
     return rules
 
 
-def _coalesce(frame: pd.DataFrame, present: list[str]) -> pd.Series[Any]:
-    merged = frame[present[0]]
+def _holds_value(series: pd.Series[Any], tokens: Sequence[str]) -> pd.Series[Any]:
+    """Present and not a declared null token — what the builder coalesces on."""
+    return series.notna() & ~series.isin(tokens)
+
+
+def _coalesce(frame: pd.DataFrame, present: list[str], tokens: Sequence[str]) -> pd.Series[Any]:
+    """The first candidate with a value, as the builder picks it.
+
+    The builder turns null tokens into null **before** it coalesces, so a ``\\N``
+    in the first candidate must not beat a real value in the next. Where no
+    candidate holds a value, the stored spelling (a token, if any) is kept, so the
+    representation the source wrote is still what the change count compares.
+    """
+    merged = frame[present[0]].where(_holds_value(frame[present[0]], tokens))
+    stored = frame[present[0]]
     for name in present[1:]:
-        merged = merged.combine_first(frame[name])
-    return merged
+        merged = merged.combine_first(frame[name].where(_holds_value(frame[name], tokens)))
+        stored = stored.combine_first(frame[name])
+    return merged.combine_first(stored)
 
 
 def _join_parts(frame: pd.DataFrame, present: list[str]) -> pd.Series[Any]:

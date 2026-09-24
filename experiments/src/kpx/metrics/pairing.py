@@ -160,7 +160,7 @@ def pair_and_classify(
     kind of rewrite it was — ``"0"`` becoming ``0``, ``"3"`` becoming
     ``"00003"`` and ``\\N`` becoming null are all "direct" roles and all one
     number. The causes are named by the rules fixed before any result was seen
-    (``overnight/rq1-transition/PRE_ANALYSIS.md`` section 11), first match wins:
+    (``docs/rq1-transition-classification.md``), first match wins:
 
     1. same token — ``unchanged``
     2. either side unreadable — ``unreadable_lossy``
