@@ -121,7 +121,9 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--warmup", type=int, default=WARMUP_RUNS)
     parser.add_argument("--repeat", type=int, default=MEASURED_RUNS)
     parser.add_argument("--results", type=Path, default=None, metavar="FILE")
-    parser.add_argument("--fresh", action="store_true", help="Gold와 결과를 다시 만든다")
+    parser.add_argument(
+        "--fresh", action="store_true", help="이 과제의 이전 결과 행을 지우고 새로 기록한다"
+    )
     args = parser.parse_args(argv)
 
     runs = args.work_root / "runs"
@@ -138,10 +140,9 @@ def main(argv: list[str] | None = None) -> int:
         bound_silver(builds, RENT_SPEC, args.rent_snapshot_id, runs / args.rent_run_id),
     ]
 
-    newest = max(trades_silver.stat().st_mtime, rents_silver.stat().st_mtime)
-    gold_build_seconds: float | None = None
-    if args.fresh or not gold.exists() or gold.stat().st_mtime < newest:
-        gold_build_seconds = build_gold(trades_silver, rents_silver, gold)
+    # Gold는 매번 다시 만든다. mtime으로 재사용하면 ``gold_recipe``가 바뀌었는데
+    # Silver가 그대로일 때 옛 바이트가 새 recipe로 기록된다 (run_task01 참조).
+    gold_build_seconds = build_gold(trades_silver, rents_silver, gold)
 
     materialized = pd.read_parquet(gold)
     gold_build = record_joined_layer(
@@ -220,8 +221,7 @@ def main(argv: list[str] | None = None) -> int:
             ]
         ).to_string(index=False)
     )
-    if gold_build_seconds is not None:
-        print(f"\nGold 빌드 비용: {gold_build_seconds:.2f}s (1회)")
+    print(f"\nGold 빌드 비용: {gold_build_seconds:.2f}s (1회)")
     return 0 if not failed else 1
 
 
