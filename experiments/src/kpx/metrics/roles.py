@@ -78,8 +78,9 @@ _YEAR_MONTH_COMPACT = re.compile(r"^\d{4}(0[1-9]|1[0-2])$")
 # matters — the claim is that the measurement reads what the pipeline reads, so
 # a reader that is more generous than the build makes Bronze look better than
 # the build would have found it.
-_INTEGER = re.compile(r"^[+-]?\d+$")
-_FLOAT = re.compile(r"^[+-]?(\d+(\.\d*)?|\.\d+)([eE][+-]?\d+)?$")
+# ASCII only: ``\d`` also matches full-width ``１２``, which polars refuses.
+_INTEGER = re.compile(r"^[+-]?\d+$", re.ASCII)
+_FLOAT = re.compile(r"^[+-]?(\d+(\.\d*)?|\.\d+)([eE][+-]?\d+)?$", re.ASCII)
 
 
 def _integer(value: object) -> int | None:
@@ -146,6 +147,8 @@ class Role:
     projection: str
     bronze: tuple[str, ...]
     silver: tuple[str, ...]
+    null_tokens: tuple[str, ...] = ()
+    zfill: int | None = None
 
     def columns(self, layer: str) -> tuple[str, ...]:
         return self.bronze if layer == "bronze" else self.silver
@@ -186,6 +189,9 @@ def plan_roles(contract: Mapping[str, Any]) -> tuple[Role, ...]:
     }
     derived = {str(item["name"]): item for item in contract.get("derived", ())}
     required = set(contract.get("required", ()))
+    global_nulls = tuple(contract.get("null_tokens", ()))
+    column_nulls = _column_null_tokens(contract)
+    zfill: dict[str, int] = dict(contract.get("zfill", {}))
 
     # Silver name -> Bronze name, for the roles that are one column on each side.
     bronze_of = {silver: bronze for bronze, silver in rename.items()}
@@ -194,6 +200,12 @@ def plan_roles(contract: Mapping[str, Any]) -> tuple[Role, ...]:
 
     def add(name: str, projection: str, bronze: tuple[str, ...], kind: str | None = None) -> None:
         cast = casts.get(name, "")
+        # A column-specific null token is declared against the layer's own
+        # spelling, so both spellings are consulted; the token means absent in
+        # this role wherever it is written.
+        tokens = dict.fromkeys(global_nulls)
+        for spelling in (*bronze, name):
+            tokens.update(dict.fromkeys(column_nulls.get(spelling, ())))
         roles.append(
             Role(
                 name=name,
@@ -203,6 +215,8 @@ def plan_roles(contract: Mapping[str, Any]) -> tuple[Role, ...]:
                 projection=projection,
                 bronze=bronze,
                 silver=(name,),
+                null_tokens=tuple(tokens),
+                zfill=zfill.get(name),
             )
         )
 
@@ -250,7 +264,10 @@ def project(frame: pd.DataFrame, roles: Sequence[Role], *, layer: str) -> pd.Dat
                 f"{layer} has none of {list(wanted)} for role {role.name!r}; "
                 "the two layers would be measured over different roles"
             )
-        if role.projection == "parts":
+        # Only Bronze holds the parts; Silver stores the assembled value, and
+        # joining it again would turn its date into the same string as Bronze's
+        # and hide the change.
+        if role.projection == "parts" and layer == "bronze":
             if len(present) != len(wanted):
                 raise RoleError(
                     f"{layer} has only {present} of {list(wanted)} for role {role.name!r}"
@@ -277,6 +294,16 @@ def assert_symmetric(bronze: pd.DataFrame, silver: pd.DataFrame, roles: Sequence
 
 
 # -- internals -------------------------------------------------------------
+
+
+def _column_null_tokens(contract: Mapping[str, Any]) -> dict[str, tuple[str, ...]]:
+    """``column_null_tokens`` before or after the spec turns it into objects."""
+    declared = contract.get("column_null_tokens", {})
+    rules: dict[str, tuple[str, ...]] = {}
+    for column, rule in declared.items():
+        tokens = rule["tokens"] if isinstance(rule, Mapping) else rule.tokens
+        rules[str(column)] = tuple(tokens)
+    return rules
 
 
 def _coalesce(frame: pd.DataFrame, present: list[str]) -> pd.Series[Any]:

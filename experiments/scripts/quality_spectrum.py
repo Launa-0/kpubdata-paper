@@ -84,6 +84,7 @@ import pandas as pd  # noqa: E402
 from _paths import DEFAULT_WORK_ROOT, SNAPSHOTS  # noqa: E402
 
 from kpx.datasets import read_artifact  # noqa: E402
+from kpx.metrics.pairing import aggregate, assert_row_identity, pair_roles  # noqa: E402
 from kpx.metrics.quality import (  # noqa: E402
     H1_COMPARABLE_METRICS,
     H1_DIAGNOSTIC_METRICS,
@@ -120,6 +121,10 @@ def layer_spec(roles: Sequence[Role], *, interpreted: bool) -> QualitySpec:
                 kind=role.kind,  # type: ignore[arg-type]
                 required=role.required,
                 interpret=interpreter_for(role) if interpreted else None,
+                # naive는 계약을 전혀 모른다 — null token도 모른다. semantic에만
+                # 준다. 이것을 주지 않으면 ``\N``이 결측이 아니라 파싱 실패로
+                # 잡혀, 원천이 "비었다"고 말한 자리를 데이터 결함으로 센다.
+                null_tokens=frozenset(role.null_tokens) if interpreted else frozenset(),
             )
             for role in roles
         )
@@ -173,9 +178,19 @@ def main(argv: list[str] | None = None) -> int:
         metavar="N",
         help="계통 표본으로 N행만 읽는다 (기본: 전수). 메모리가 모자랄 때만 쓴다.",
     )
+    parser.add_argument(
+        "--results",
+        type=Path,
+        default=Path(__file__).resolve().parents[1] / "results",
+        help="RQ1 측정 테이블을 쓸 곳 (기본: experiments/results)",
+    )
     args = parser.parse_args(argv)
 
     summary: list[dict[str, Any]] = []
+    # RQ1 전용 테이블 두 벌. ResultRow는 (task, condition, seed) run 하나가 한 행이라
+    # grain이 다르다 — 이것은 run이 아니라 artifact 쌍을 재는 측정이다.
+    layer_rows: list[dict[str, Any]] = []
+    role_rows: list[dict[str, Any]] = []
     for module_name in SPEC_MODULES:
         try:
             spec_module = importlib.import_module(module_name)
@@ -225,6 +240,15 @@ def main(argv: list[str] | None = None) -> int:
             f"  build {build.build_id}  {build.inputs.pipeline_version}  "
             f"checksum {build.output_checksum[:12]}…"
         )
+        # 두 테이블이 공유하는 anchor. bronze_naive/bronze_semantic은 빌드가 아니므로
+        # build_id가 아니라 silver_build_id다 — 이 측정이 어떤 artifact 쌍에
+        # 묶였는지를 가리킨다.
+        anchor = {
+            "silver_build_id": build.build_id,
+            "snapshot_id": spec["snapshot_id"],
+            "config_hash": build.inputs.config_hash,
+            "output_checksum": build.output_checksum,
+        }
 
         # 같은 투영을 두 번 읽는다. 조건이 하나 더 생긴 것이 아니라 **같은 Bronze
         # artifact에 대한 두 개의 view**다.
@@ -292,6 +316,46 @@ def main(argv: list[str] | None = None) -> int:
             ).to_string(index=False, na_rep="—")
         )
 
+        # 비교 지표가 평평한 자리에서 RQ1이 실제로 보여주는 것 — 표준화가 표현을
+        # 얼마나 바꿨고, 바꾸면서 뜻을 지켰는가.
+        # 짝짓기는 위치로 한다. 길이가 같다는 것은 같은 행이라는 뜻이 아니므로,
+        # required role이 모든 행에서 같게 읽히는지 먼저 확인한다.
+        assert_row_identity(bronze_roles, silver_roles, roles)
+        pairs = pair_roles(bronze_roles, silver_roles, roles)
+        for pair in pairs:
+            role_rows.append({"dataset": dataset, **anchor, **pair.to_dict()})
+        for view, report in (
+            ("bronze_naive", bronze_naive),
+            ("bronze_semantic", reports["bronze"]),
+            ("silver", reports["silver"]),
+        ):
+            layer_rows.append(
+                {
+                    "dataset": dataset,
+                    **anchor,
+                    "view": view,
+                    "roles": len(roles),
+                    "required": sum(role.required for role in roles),
+                    "rows": report.rows,
+                    **{metric: report.metric(metric) for metric in TABLE2_METRICS},
+                }
+            )
+
+        print("\n  -- 표준화가 한 일 (H1 primary) --")
+        print(
+            pd.DataFrame([aggregate(pairs), aggregate(pairs, required_only=True)]).to_string(
+                index=False, na_rep="—"
+            )
+        )
+        print(
+            "     representation_change_rate는 분석자의 노력이 아니다 — vectorized"
+            " cast 한 줄이\n"
+            "     백만 셀을 바꾼다. 그 정규화를 downstream에서 직접 하는 비용은 RQ2가"
+            " 따로 잰다.\n"
+            "     preservation은 읽힌 값에 대해서만 센다. 읽히지 않은 값은 coverage에"
+            " 남는다."
+        )
+
         b_macro, s_macro = macro(b_cols), macro(s_cols)
         print("\n  -- column-macro (diagnostic, H1 primary 아님) --")
         print(
@@ -317,7 +381,7 @@ def main(argv: list[str] | None = None) -> int:
 
         # raw까지 놓아야 한다 — 표본을 안 뜨면 bronze가 raw와 같은 객체라,
         # bronze만 지우면 참조가 남아 다음 데이터셋에서 메모리가 겹친다.
-        del raw, bronze, silver, bronze_roles, silver_roles, b_cols, s_cols, reports
+        del raw, bronze, silver, bronze_roles, silver_roles, b_cols, s_cols, reports, pairs
         gc.collect()
 
     print()
@@ -330,6 +394,15 @@ def main(argv: list[str] | None = None) -> int:
     print("required는 docs/required-columns.md의 규칙(식별자 + 시점 + 주된 사실)을 따른다.")
     print("양쪽에 같은 해석 능력을 준 비교다 — Bronze를 계약 파서 없이 읽은 값은")
     print("데이터셋별 상세표의 Bronze (naive) 열에 있다.")
+
+    # 표는 화면에서 사라진다. 표/그림을 만드는 쪽이 이 측정을 다시 돌리지 않도록,
+    # rate와 함께 **count를 저장한다** — role마다 유효 값 수가 달라서 rate의 단순
+    # 평균은 또 하나의 macro-average가 된다.
+    args.results.mkdir(parents=True, exist_ok=True)
+    for name, rows in (("rq1_layer_quality", layer_rows), ("rq1_role_pair", role_rows)):
+        path = args.results / f"{name}.parquet"
+        pd.DataFrame(rows).to_parquet(path, index=False)
+        print(f"{name}: {len(rows)}행 -> {path}")
     return 0
 
 

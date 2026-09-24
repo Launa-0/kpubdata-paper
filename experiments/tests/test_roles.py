@@ -76,6 +76,16 @@ def test_projection_gives_both_layers_the_same_columns() -> None:
     assert b["deal_date"].iloc[0] == "2023-01-05"
 
 
+def test_silver_keeps_its_stored_date_rather_than_being_joined_again() -> None:
+    """Silver의 deal_date는 한 컬럼이다. 조각 잇기를 Silver에도 걸면 date가 문자열이
+    되어 Bronze의 이은 문자열과 같아 보이고, 모든 행에서 일어난 표현 변화가 0으로 잡힌다."""
+    import datetime as dt
+
+    role = next(role for role in _roles() if role.name == "deal_date")
+    silver = pd.DataFrame({"deal_date": [dt.date(2023, 1, 5)]})
+    assert project(silver, (role,), layer="silver")["deal_date"].iloc[0] == dt.date(2023, 1, 5)
+
+
 def test_a_role_no_column_can_produce_stops_the_measurement() -> None:
     """빠뜨리면 두 계층의 분모가 달라지고 표는 그대로 찍힌다."""
     roles = _roles()
@@ -100,3 +110,13 @@ def test_the_declared_cast_reads_what_the_pipeline_reads() -> None:
     assert interpreter_for(month)("202207") == "2022-07"
     assert interpreter_for(month)("2022-07") == "2022-07"
     assert interpreter_for(month)("2022-13") is None
+
+
+def test_only_ascii_digits_read_as_numbers_like_the_builder() -> None:
+    r"""``\d``는 전각 숫자도 받는다. polars의 캐스트는 받지 않는다 — 측정이 더 관대하면
+    builder가 멈출 원천을 Bronze가 읽는 것처럼 센다."""
+    from kpx.metrics.roles import INTERPRETERS
+
+    for cast in ("int", "float", "int_comma", "float_comma"):
+        assert INTERPRETERS[cast]("１２") is None
+        assert INTERPRETERS[cast]("12") == 12

@@ -129,12 +129,17 @@ class QualityError(ValueError):
 
 @dataclass(frozen=True)
 class ColumnSpec:
-    """One column of one layer, and how to read it.
+    r"""One column of one layer, and how to read it.
 
     ``interpret`` turns a stored value into its canonical form and returns
     ``None`` — or raises — when it cannot. A Bronze spec should pass the task's
     own parser here rather than leave it to the default, so that Bronze is
     credited with everything the pipeline can actually read.
+
+    ``null_tokens`` are the stored spellings of absence the contract declares
+    (``\N`` and the like). They are read as missing rather than unreadable —
+    the source said those cells are empty, and counting them as corrupt would
+    blame the data for what the reader was not told.
 
     ``minimum`` is an **exclusive** lower bound, because the bounds H1 cares
     about are ``price > 0`` and ``area > 0``.
@@ -147,6 +152,7 @@ class ColumnSpec:
     minimum: float | None = None
     predicate: Callable[[Any], bool] | None = None
     required: bool = True
+    null_tokens: frozenset[str] = frozenset()
 
 
 @dataclass(frozen=True)
@@ -361,6 +367,12 @@ def _read(frame: pd.DataFrame, spec: ColumnSpec) -> _Reading:
     """Apply a column's interpretation, keeping absent and corrupt apart."""
     raw = frame[spec.column]
     missing = raw.isna().to_numpy()
+    if spec.null_tokens:
+        # The contract declares what absence looks like in this source. A reader
+        # that does not know ``\N`` calls it a corrupt value, which is the same
+        # hostility as not knowing that ``120,000`` is a number: it counts the
+        # reader's ignorance as the data's defect.
+        missing = missing | raw.isin(spec.null_tokens).to_numpy()
     interpreted = _interpret(raw, spec)
     unreadable = interpreted.isna().to_numpy() & ~missing
     return _Reading(spec=spec, missing=missing, unreadable=unreadable, values=interpreted)
