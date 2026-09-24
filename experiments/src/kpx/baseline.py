@@ -31,12 +31,15 @@ is handicapped in the direction that weakens our own hypothesis, and RQ2 is
 measured on the *structure* of the preparation code, which reuse does not
 flatter. `docs/monolithic-baseline.md` records the rationale in full.
 
-Why the check is applied to ``monolithic`` alone: ``bronze``, ``silver`` and
-``gold`` may legitimately end up with different prepared frames, because the
-layers differ in data quality and that difference is precisely what RQ3
-measures. Forcing all four conditions to agree would delete the H3 signal.
-Only the baseline is required to match, because only the baseline claims to be
-doing the same work by another route.
+Why this check is applied to ``monolithic`` alone: it is the one condition
+that claims to do the Medallion conditions' work by another route, so its
+prepared frame is checked against theirs here. The other conditions are not
+exempt from agreeing — every condition is given the same transformation
+semantics, and each task's tests and the runs' ``output_hash`` hold all four to
+the same analysis result. That agreement is a validity gate, not a finding, and
+its weight differs by pair: Bronze ↔ Silver is an independent check (the
+harness's parsers against the builder's casts), while Silver ↔ Gold and
+Bronze ↔ Monolithic agree by construction (same functions, same helpers).
 """
 
 from __future__ import annotations

@@ -109,12 +109,18 @@ A task that needs `rtol` has to justify it in the paper. The only defensible
 reason is that an aggregation legitimately sums in a different order, and the
 tolerance must sit far below the effect being reported.
 
-**This check applies to `monolithic` only.** `bronze`, `silver` and `gold` are
-*allowed* to disagree with one another: they differ in the data quality of the
-layer they read, and that difference is exactly what RQ3/H3 measures. Requiring
-all four conditions to agree would delete the finding. The baseline is held to
-equivalence because it is the only condition claiming to do the same work by
-another route.
+**This check applies to `monolithic` only**, because it is the one condition
+claiming to do the Medallion conditions' work by another route. The other
+conditions are not exempt from agreeing: every condition gets the same
+transformation semantics, and each task's tests and the runs' `output_hash`
+hold all four to the same analysis result. That agreement is a validity gate
+for RQ2, not a finding, and the pairs carry different weight:
+
+| Pair | Why they agree |
+|---|---|
+| Bronze ↔ Silver | **independent** — the harness's parsers against the builder's casts, on the same bytes |
+| Silver ↔ Gold | by construction — Gold is built with the same functions |
+| Bronze ↔ Monolithic | by construction — same helpers in the same order |
 
 ## Checklist for a new task
 

@@ -143,3 +143,29 @@ def test_coalesce_sources_count_which_column_supplied_each_row() -> None:
         {"role": "ym_raw", "source": "대여년월", "rows": 1},
         {"role": "ym_raw", "source": None, "rows": 1},
     ]
+
+
+def test_a_null_token_does_not_win_the_coalesce() -> None:
+    r"""builder는 null token을 null로 바꾼 **뒤** coalesce한다. 첫 후보의 ``\N``을 값으로
+    보면 두 번째 후보의 실제 값을 버리고 builder와 다른 행을 잰다."""
+    from kpx.metrics.roles import Role, coalesce_sources
+
+    role = Role(
+        name="distance_m",
+        kind="numeric",
+        required=False,
+        cast="float",
+        projection="coalesce",
+        bronze=("이동거리", "이동거리(M)"),
+        silver=("distance_m",),
+        null_tokens=("\\N",),
+    )
+    frame = pd.DataFrame({"이동거리": ["\\N", "\\N"], "이동거리(M)": ["2230", None]})
+
+    projected = project(frame, (role,), layer="bronze")["distance_m"]
+    # 실제 값이 있으면 그것을, 없으면 원천이 적은 표기(\N)를 그대로 둔다.
+    assert list(projected) == ["2230", "\\N"]
+    assert coalesce_sources(frame, (role,)) == [
+        {"role": "distance_m", "source": "이동거리(M)", "rows": 1},
+        {"role": "distance_m", "source": None, "rows": 1},
+    ]

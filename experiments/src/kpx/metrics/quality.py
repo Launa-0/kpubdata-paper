@@ -1,8 +1,15 @@
-r"""Data quality for RQ1/H1: what standardization actually improves.
+r"""Data-quality metrics for RQ1, applied unchanged to Bronze and Silver.
 
-H1 predicts that Silver improves type consistency, code validity and schema
-conformance over Bronze, and reduces missing values, duplicates and parsing
-failures. Six metrics, one interface applied unchanged to both layers.
+Six metrics — type consistency, code validity, schema conformance, missing
+values, duplicates and parsing failures — through one interface for both layers.
+In RQ1 they are an **integrity check**, not the finding: the builder refuses a
+build whose declared casts lose values, so once Bronze is read with the
+contract's own parsers a successful build cannot differ from its Silver on the
+comparable metrics. What standardization changed is measured cell by cell in
+:mod:`kpx.metrics.pairing`. (The original hypothesis — that Silver *improves*
+these metrics — and why it was retired are recorded in
+``docs/experiment-design-revisions.md``.) The ``H1_*`` names below are kept
+because the stored result schema uses them.
 
 The hard part is not computing rates. It is making sure the rates compare the
 same thing, because Bronze and Silver do not even use the same column names —
@@ -11,11 +18,11 @@ Bronze has ``거래금액`` holding ``"120,000"``, Silver has ``price_krw`` hold
 column plays which role and how a value in it is to be read. Everything else is
 computed identically for both.
 
-Two ways this measurement could manufacture H1, and what stops each
----------------------------------------------------------------------
+Two ways this measurement could manufacture a layer difference, and what stops each
+-----------------------------------------------------------------------------------
 
 **Reading Bronze naively.** ``pd.to_numeric("120,000")`` fails, and if that
-counted as a parsing failure, H1 would be measuring how hostile we chose to be
+counted as a parsing failure, the comparison would measure how hostile we chose to be
 to Bronze rather than anything about the data. So a Bronze spec passes the same
 interpretation the Silver *build* declares — ``kpx.metrics.roles.INTERPRETERS``,
 keyed by the cast in the contract — and Bronze is credited with every value the
@@ -49,7 +56,7 @@ The metrics
 Comparable and diagnostic
 -------------------------
 
-All six are measured and all six are stored. They are not all evidence for H1.
+All six are measured and all six are stored. They are not all comparable.
 
 A metric is **comparable** when a :class:`QualitySpec` states the same role on
 both sides, so the two layers measure the same construct even though Bronze
@@ -112,7 +119,7 @@ H1_COMPARABLE_METRICS: tuple[str, ...] = (
     "parsing_failure_rate",
 )
 
-#: Measured and stored, but not evidence for H1 on its own. See the module
+#: Measured and stored, but not a layer comparison on its own. See the module
 #: docstring: it compares stored values rather than interpreted ones, so a
 #: delta here is something to explain rather than something that settles
 #: anything.
@@ -141,7 +148,7 @@ class ColumnSpec:
     the source said those cells are empty, and counting them as corrupt would
     blame the data for what the reader was not told.
 
-    ``minimum`` is an **exclusive** lower bound, because the bounds H1 cares
+    ``minimum`` is an **exclusive** lower bound, because the bounds RQ1 cares
     about are ``price > 0`` and ``area > 0``.
     """
 
@@ -192,7 +199,7 @@ class QualitySpec:
 
 @dataclass(frozen=True)
 class QualityReport:
-    """H1's six metrics for one layer, plus what they were measured over.
+    """The six metrics for one layer, plus what they were measured over.
 
     ``rows`` is part of the report rather than a footnote: a missing rate is
     only comparable across layers alongside the number of rows it was computed
@@ -225,7 +232,7 @@ class QualityReport:
 
 
 def measure_quality(frame: pd.DataFrame, spec: QualitySpec, *, layer: Layer) -> QualityReport:
-    """Measure H1's six metrics over one layer's frame."""
+    """Measure the six metrics over one layer's frame."""
     if frame.empty:
         raise QualityError(
             "cannot measure the quality of an empty frame; every rate would be "

@@ -2,9 +2,10 @@
 
 ## Why there is a contract at all
 
-The paper claims that moving from Bronze to Silver to Gold reduces the cost of
-preparing data for analysis (RQ2/H2), without changing what the analysis
-concludes (RQ3/H3). Both claims are easy to fake by accident:
+The paper measures how much preparation work moves out of the analysis when it
+reads Bronze, Silver or Gold (RQ2), under the condition that every route reaches
+the **same** analysis result — an equivalence gate, not a claim that one layer
+is more accurate. Both are easy to fake by accident:
 
 * Report LOC for a script that mixes preparation and analysis, and
   `preprocessing_loc` measures whatever the author felt like calling
