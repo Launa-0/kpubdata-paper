@@ -26,11 +26,14 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 
 import _builder_identity  # noqa: E402
 import _timing  # noqa: E402
-import polars as pl  # noqa: E402
+
+try:
+    import polars as pl
+except ModuleNotFoundError:  # --help는 harness 환경(CI)에서도 돌아야 한다.
+    pl = None
 import rent_spec  # noqa: E402
 import trades_spec  # noqa: E402
 from _paths import SNAPSHOTS, snapshot_source  # noqa: E402
-from polars.testing import assert_frame_equal  # noqa: E402
 
 SPECS = {spec.DATASET_ID: spec.SPEC for spec in (trades_spec, rent_spec)}
 SUPPORTED = frozenset({"read_as", "required", "rename", "casts", "derived"})
@@ -242,6 +245,8 @@ class PolarsEngine:
 
 
 def measure(args: argparse.Namespace, layout: _timing.Layout) -> int:
+    from polars.testing import assert_frame_equal
+
     if not args.pilot and (
         args.repeats != _timing.MEASURED_RUNS or args.tasks != list(_timing.TASKS)
     ):
@@ -304,6 +309,8 @@ def main(argv: list[str] | None = None) -> int:
     run.add_argument("--repeats", type=int, default=_timing.MEASURED_RUNS)
     args = parser.parse_args(argv)
 
+    if pl is None:
+        raise SystemExit("polars가 없다 — builder 가상환경에서 실행하라")
     layout = _timing.Layout(_timing.WORK)
     if args.command == "land":
         land(layout)
