@@ -495,6 +495,63 @@ def record_derived_layer(
     return provenance
 
 
+def record_joined_layer(
+    artifact: Path | str,
+    *,
+    dataset: str,
+    layer: Layer,
+    upstreams: Iterable[Provenance],
+    recipe: str,
+    row_count: int,
+    columns: tuple[str, ...] | list[str],
+    store: ProvenanceStore,
+    status: str = "ok",
+) -> Provenance:
+    """Record a layer the harness joined from builds of several datasets (T3).
+
+    The schema names one snapshot, one pipeline version and one upstream, so a
+    join states all of them as composites, ordered by dataset so that the id does
+    not depend on argument order. :meth:`ProvenanceStore.lineage` walks every
+    input back to its snapshot. ``assert_same_inputs`` does not apply: the inputs
+    differ in snapshot and contract by construction.
+    """
+    from kpx.provenance import INPUT_SEPARATOR, BuildInputs, ProvenanceError, record_build
+
+    ordered = sorted(upstreams, key=lambda build: build.inputs.dataset)
+    if len(ordered) < 2:
+        raise ProvenanceError("a join reads two builds or more; use record_derived_layer")
+    datasets = [build.inputs.dataset for build in ordered]
+    if len(set(datasets)) != len(datasets):
+        raise ProvenanceError(f"a dataset appears more than once among the inputs: {datasets}")
+    # A component that already holds the separator could not be split back apart.
+    for build in ordered:
+        fields = (build.inputs.snapshot_id, build.inputs.pipeline_version, build.build_id)
+        if any(INPUT_SEPARATOR in field for field in fields):
+            raise ProvenanceError(
+                f"{build.inputs.dataset} input contains the separator {INPUT_SEPARATOR!r}: {fields}"
+            )
+
+    material = "\n".join([*(build.inputs.config_hash for build in ordered), recipe])
+    provenance = record_build(
+        artifact,
+        inputs=BuildInputs(
+            dataset=dataset,
+            layer=layer,
+            snapshot_id=INPUT_SEPARATOR.join(build.inputs.snapshot_id for build in ordered),
+            pipeline_version=INPUT_SEPARATOR.join(
+                build.inputs.pipeline_version for build in ordered
+            ),
+            config_hash=hashlib.sha256(material.encode("utf-8")).hexdigest(),
+            upstream_build_id=INPUT_SEPARATOR.join(build.build_id for build in ordered),
+        ),
+        row_count=row_count,
+        columns=columns,
+        status=status,
+    )
+    store.write(provenance)
+    return provenance
+
+
 def assert_same_inputs(builds: Iterable[Provenance]) -> None:
     """Refuse a set of builds that did not read the same source or code.
 

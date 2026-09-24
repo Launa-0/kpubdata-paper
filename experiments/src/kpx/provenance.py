@@ -47,6 +47,10 @@ from kpx.pipeline import config_hash
 PROVENANCE_FILENAME = "provenance.json"
 SCHEMA_VERSION = 1
 
+#: Joins the ids, snapshots and versions of a layer read from several builds (T3).
+#: Not ``+``: pipeline versions already contain it (``0.4.0.dev0+5d86…+226f…``).
+INPUT_SEPARATOR = "|"
+
 #: Libraries whose version can change a numeric result and so must be reported
 #: in the paper's methodology section.
 TRACKED_PACKAGES = (
@@ -358,18 +362,28 @@ class ProvenanceStore:
 
         R2 reports where a schema broke; without the chain, a Gold-level failure
         cannot be attributed to the layer that introduced it.
+
+        A layer joined from several builds names them all, separated by
+        :data:`INPUT_SEPARATOR`, so the chain is a small DAG. Every build appears
+        once, after everything it was derived from.
         """
         chain: list[Provenance] = []
-        seen: set[str] = set()
-        current: str | None = build_id
-        while current is not None:
-            if current in seen:
+        done: set[str] = set()
+
+        def visit(current: str, path: frozenset[str]) -> None:
+            if current in path:
                 raise ProvenanceError(f"lineage of {build_id} contains a cycle at {current}")
-            seen.add(current)
+            if current in done:
+                return
             provenance = self.find(current)
+            upstream = provenance.inputs.upstream_build_id
+            for parent in upstream.split(INPUT_SEPARATOR) if upstream else ():
+                visit(parent, path | {current})
+            done.add(current)
             chain.append(provenance)
-            current = provenance.inputs.upstream_build_id
-        return list(reversed(chain))
+
+        visit(build_id, frozenset())
+        return chain
 
 
 __all__ = [
