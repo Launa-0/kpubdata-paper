@@ -11,7 +11,8 @@
 - 모든 실행의 결과가 기준과 같다 (``equivalent``). pandas는 해시까지 Gold 조건의 기준과
   같아야 한다. polars는 병렬 합산 순서 때문에 마지막 자리가 흔들리므로 준비 실행과
   ``_timing.RTOL`` 안에서 같은지를 본다.
-- polars 결과가 pandas 기준과 키·문자열은 정확히, 수치는 ``_timing.RTOL`` 안에서 같다.
+- polars 결과가 pandas 기준과 같다. 행 수·키·문자열·정수·결측 위치는 정확히, 부동소수
+  분석값만 ``_timing.RTOL`` 안에서 (절대오차 허용 없음).
 - 두 엔진이 같은 기계(``environment_id``)와 같은 코드(``paper_sha``, ``builder_sha``)에서 돌았다.
 """
 
@@ -76,7 +77,12 @@ def same_result(left: pd.DataFrame, right: pd.DataFrame) -> str | None:
         a, b = left[column], right[column]
         if pd.api.types.is_numeric_dtype(a) and pd.api.types.is_numeric_dtype(b):
             x, y = a.to_numpy("float64", na_value=np.nan), b.to_numpy("float64", na_value=np.nan)
-            if not np.allclose(x, y, rtol=_timing.RTOL, atol=0.0, equal_nan=True):
+            if not np.array_equal(np.isnan(x), np.isnan(y)):
+                return f"{column}: 결측 위치가 다르다"
+            # 정수(건수·순위)는 정확히, 부동소수 분석값만 상대오차로 본다.
+            exact = pd.api.types.is_integer_dtype(a) or pd.api.types.is_integer_dtype(b)
+            rtol = 0.0 if exact else _timing.RTOL
+            if not np.allclose(x, y, rtol=rtol, atol=0.0, equal_nan=True):
                 return f"{column}: 최대 차이 {np.nanmax(np.abs(x - y))}"
         elif not a.astype("string").equals(b.astype("string")):
             return f"{column}: 값이 다르다"

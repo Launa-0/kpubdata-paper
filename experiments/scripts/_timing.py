@@ -16,21 +16,41 @@ pandas 러너는 harness 가상환경, polars 러너는 builder 가상환경에�
 
 계약은 축약이 아니라 **전체 계약**(``*_spec.SPEC["contract"]``)이다.
 
-## 시나리오 (무엇이 바뀌었나 → materialized가 어디부터 다시 하나)
+## 무엇을 재는가
 
-- S1 분석만 바뀜 → 저장된 Gold를 읽어 분석
-- S2 Gold 수준 변경 → 저장된 Silver에서 Gold를 다시 만들고 기록
-- S3 계약/Silver 수준 변경 → Bronze에서 과제가 읽는 모든 Silver와 Gold를 다시 만들고 기록
-- S4 원천 변경 → 새 Bronze에서 과제가 읽는 모든 Silver와 Gold를 다시 만들고 기록
+같은 변환 의미와 같은 Bronze Parquet 입력에서, 중간 계층을 저장된 checkpoint로 둘 때
+재계산 범위와 materialization I/O가 실행 비용을 어떻게 바꾸는가. 즉 **post-Bronze
+재계산 비용**이다.
 
-S3와 S4는 materialized가 하는 일이 같다. builder에 증분 경로가 없어 원천이 바뀌어도
-Silver 전체를 다시 만들기 때문이다. 둘은 무효화 사유(계약 대 스냅샷)가 달라 따로
-보고하되, 숫자가 같게 나오는 것이 예상이다. T3에서 한 원천만 바뀌어 다른 Silver를
-재사용하는 경우는 재지 않는다.
+재지 않는 것:
 
-변경의 **내용**은 넣지 않는다. 모든 셀이 기준 recipe를 실행해 같은 분석 결과를 내야
-하고, 그래서 매 실행의 결과가 기준과 같은지(``equivalent``)로 정합성을 본다. 시나리오가
-정하는 것은 어느 계층부터 다시 계산하는가다.
+- 원천 JSONL 적재·``read_as``·Bronze 생성 비용
+- builder 전체 orchestration·provenance·checksum 부기 비용
+- 실제로 다른 계약 로직을 썼을 때의 계산 복잡도 변화
+- T3에서 한 원천만 갱신되는 증분 경우
+- 사람의 분석 노력
+
+## 시나리오 — 무효화 수준 (materialized가 어디부터 다시 하나)
+
+- S1 = analysis-level invalidation → 저장된 Gold를 읽어 분석
+- S2 = Gold-level invalidation → 저장된 Silver에서 Gold를 다시 만들고 기록
+- S3 = Silver/contract-level invalidation → 기존 Bronze checkpoint에서 Silver+Gold 재계산
+- S4 = source-level invalidation → 새 Bronze checkpoint가 **이미 준비되어 있다는 전제**에서
+  Silver+Gold 재계산. Bronze checkpoint 생성은 포함하지 않는다 — "원천부터 Gold까지의
+  전체 재빌드"가 아니다.
+
+S1–S4는 서로 다른 변환을 실행하는 네 workload가 아니라, 같은 계산을 두고 어느
+checkpoint부터 무효화됐다고 가정하는 재계산 시나리오다. 변경의 **내용**은 넣지 않는다
+(S3도 계약 내용을 실제로 바꾸지 않는다). 그래서 모든 실행이 같은 분석 결과를 내야 하고,
+매 실행의 결과가 기준과 같은지(``equivalent``)로 정합성을 본다.
+
+S3와 S4는 materialized가 하는 일이 같다. builder에 증분 경로가 없어 Silver 전체를 다시
+만들기 때문이다. S3≈S4가 나오면 "이 실험의 post-Bronze 경로에서 원천 변경과 계약 변경이
+같은 재계산 범위를 유발했다"까지만 말한다 — 원천 변경의 비용 일반으로 넓히지 않는다.
+
+T3의 S3/S4는 두 upstream이 모두 무효화되는 joint-invalidation 경우다. 한 원천만 바뀌어
+다른 Silver를 재사용하는 경우는 재지 않으므로, T3 materialized의 재계산 범위로는
+보수적(최악)인 쪽이다.
 
 pandas는 결과가 바이트 단위로 결정적이라 ``output_hash``가 Gold 조건의 기준 해시와 같아야
 한다. polars는 병렬 group-by가 합산 순서를 매번 바꿔 부동소수 마지막 자리가 흔들린다 —

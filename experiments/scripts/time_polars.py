@@ -265,8 +265,11 @@ def measure(args: argparse.Namespace, layout: _timing.Layout) -> int:
         reference[task].write_parquet(layout.root / engine.name / f"{task}_result.parquet")
 
     def equivalent(task: str, result: pl.DataFrame) -> bool:
+        # 허용오차는 부동소수 컬럼에만 걸린다. 행 순서·키·정수·문자열·null 위치는 정확히.
         try:
-            assert_frame_equal(result, reference[task], check_exact=False, rel_tol=_timing.RTOL)
+            assert_frame_equal(
+                result, reference[task], check_exact=False, rel_tol=_timing.RTOL, abs_tol=0.0
+            )
         except AssertionError:
             return False
         return True

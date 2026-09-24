@@ -258,3 +258,15 @@ class TestReport:
         )
         assert timing_report.same_result(left, pd.DataFrame({"k": ["a"], "v": [1.001]})) is not None
         assert timing_report.same_result(left, pd.DataFrame({"k": ["b"], "v": [1.0]})) is not None
+
+
+def test_counts_must_match_exactly_even_within_float_tolerance() -> None:
+    """허용오차는 부동소수 분석값에만 — 건수 1 차이를 반올림 잡음으로 넘기면 안 된다."""
+    left = pd.DataFrame({"n": pd.Series([1_000_000_000_000], dtype="int64")})
+    right = pd.DataFrame({"n": pd.Series([1_000_000_000_001], dtype="int64")})
+    assert timing_report.same_result(left, right) is not None
+
+
+def test_missing_positions_must_match() -> None:
+    left = pd.DataFrame({"v": [1.0, float("nan")]})
+    assert timing_report.same_result(left, pd.DataFrame({"v": [float("nan"), 1.0]})) is not None
