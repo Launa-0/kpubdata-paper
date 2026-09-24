@@ -6,7 +6,14 @@
 요약은 원자료에서만 만든다. 기술통계뿐이다 — median, 사분위(선형 보간), min–max.
 검정과 신뢰구간은 내지 않는다.
 
+- ``timing_summary.csv``: 전략별 32행 기술통계
+- ``timing_comparison.csv``: task × engine × scenario 16행, 같은 round 쌍의 비교
+  (``compare`` 참조)
+
 요약 전에 확인한다. 하나라도 어긋나면 요약을 쓰지 않는다.
+
+- 원자료의 모양이 프로토콜 그대로다 — 32셀, 셀마다 warm-up 1 + 측정 5, round 중복·누락
+  없음, round마다 두 전략, 정해진 실행 순서, 입력은 Parquet.
 
 - 모든 실행의 결과가 기준과 같다 (``equivalent``). pandas는 해시까지 Gold 조건의 기준과
   같아야 한다. polars는 병렬 합산 순서 때문에 마지막 자리가 흔들리므로 준비 실행과
@@ -60,13 +67,66 @@ def summarize(raw: pd.DataFrame) -> pd.DataFrame:
     return summary
 
 
-def ratios(summary: pd.DataFrame) -> pd.DataFrame:
-    """monolithic median ÷ materialized median. 1보다 크면 materialized가 빠르다."""
-    wide = summary.pivot_table(
-        index=["task", "engine", "scenario"], columns="strategy", values="median"
+def compare(raw: pd.DataFrame) -> pd.DataFrame:
+    """task × engine × scenario마다 두 전략의 비교.
+
+    같은 round 안에서 번갈아 돈 두 실행을 한 쌍으로 본다. 본문 비교값은 쌍의 값 —
+    ``median_paired_ratio``(monolithic ÷ materialized)와 ``median_paired_delta_seconds``
+    (monolithic − materialized)다. 둘 다 1·0보다 크면 materialized가 빠르다. 비율만
+    쓰면 수 ms 대 수 s의 차이가 과장돼 보이므로 절대 차이를 함께 둔다. 전략별
+    median의 비율(``ratio_of_medians``)도 같이 남긴다.
+    """
+    measured = raw[~raw["warmup"]]
+    pairs = measured.pivot_table(
+        index=["task", "engine", "scenario", "round"], columns="strategy", values="seconds"
     ).reset_index()
-    wide["monolithic_over_materialized"] = wide["monolithic"] / wide["materialized"]
-    return wide
+    pairs["ratio"] = pairs["monolithic"] / pairs["materialized"]
+    pairs["delta"] = pairs["monolithic"] - pairs["materialized"]
+    table = (
+        pairs.groupby(["task", "engine", "scenario"], sort=False)
+        .agg(
+            n_pairs=("round", "count"),
+            materialized_median=("materialized", "median"),
+            monolithic_median=("monolithic", "median"),
+            median_paired_ratio=("ratio", "median"),
+            median_paired_delta_seconds=("delta", "median"),
+        )
+        .reset_index()
+    )
+    table.insert(6, "ratio_of_medians", table["monolithic_median"] / table["materialized_median"])
+    return table
+
+
+def check_structure(raw: pd.DataFrame, tasks: tuple[str, ...], repeats: int) -> list[str]:
+    """원자료가 프로토콜이 정한 모양 그대로인지 — 아니면 요약하지 않는다.
+
+    셀 구성, round 0(warm-up)부터 ``repeats``까지의 중복·누락, round마다 두 전략, 실행
+    순서를 ``_timing.schedule``이 만드는 것과 행 단위로 맞춘다.
+    """
+    key = ["task", "engine", "scenario", "strategy", "round", "order_position", "warmup"]
+    expected = pd.DataFrame(
+        [
+            (s.task, engine, s.scenario, s.strategy, s.round, s.order_position, s.warmup)
+            for engine in ("pandas", "polars")
+            for s in _timing.schedule(tasks, repeats=repeats)
+        ],
+        columns=key,
+    )
+    problems = []
+    duplicated = raw.duplicated(key[:5]).sum()
+    if duplicated:
+        problems.append(f"같은 셀·round의 실행이 {duplicated}개 중복됐다")
+    actual = raw[key].astype({"round": "int64", "order_position": "int64", "warmup": "bool"})
+    merged = expected.merge(actual.drop_duplicates(), how="outer", indicator=True)
+    missing, extra = (
+        (merged["_merge"] == "left_only").sum(),
+        (merged["_merge"] == "right_only").sum(),
+    )
+    if missing or extra:
+        problems.append(f"프로토콜과 다른 실행: 빠짐 {missing}개, 예정에 없음 {extra}개")
+    if not (raw["input_format"] == _timing.INPUT_FORMAT).all():
+        problems.append(f"입력 형식이 {_timing.INPUT_FORMAT}가 아닌 실행이 있다")
+    return problems
 
 
 def same_result(left: pd.DataFrame, right: pd.DataFrame) -> str | None:
@@ -122,16 +182,20 @@ def main(argv: list[str] | None = None) -> int:
         [pd.read_parquet(source / f"{prefix}timing_raw_{e}.parquet") for e in ("pandas", "polars")],
         ignore_index=True,
     )
-    problems = check(raw, _timing.WORK)
+    # 파일럿은 줄여 돌리므로 그 모양에 맞춰 본다. 최종은 프로토콜 그대로여야 한다.
+    tasks = tuple(raw["task"].unique()) if args.pilot else tuple(_timing.TASKS)
+    repeats = int(raw["round"].max()) if args.pilot else _timing.MEASURED_RUNS
+    problems = check_structure(raw, tasks, repeats) + check(raw, _timing.WORK)
     if problems:
         raise SystemExit("요약하지 않는다:\n  " + "\n  ".join(problems))
 
-    summary = summarize(raw)
+    summary, comparison = summarize(raw), compare(raw)
     summary.to_csv(source / f"{prefix}timing_summary.csv", index=False)
+    comparison.to_csv(source / f"{prefix}timing_comparison.csv", index=False)
     with pd.option_context("display.width", 200, "display.float_format", "{:.4f}".format):
         print(summary.to_string(index=False))
         print()
-        print(ratios(summary).to_string(index=False))
+        print(comparison.to_string(index=False))
     return 0
 
 

@@ -247,9 +247,16 @@ class TestReport:
         assert summary.loc["materialized", "max"] == 5
         assert summary.loc["materialized", "iqr"] == 2
 
-    def test_ratio_above_one_means_materialized_is_faster(self) -> None:
-        ratio = timing_report.ratios(timing_report.summarize(self._raw()))
-        assert ratio["monolithic_over_materialized"].iloc[0] == 2
+    def test_comparison_pairs_the_runs_of_the_same_round(self) -> None:
+        """round 3의 monolithic이 느렸다고 그 round의 materialized와만 짝지어져야 한다."""
+        raw = self._raw()
+        mono = raw["strategy"] == "monolithic"
+        raw.loc[mono, "seconds"] = [9.0, 10, 4, 6, 8, 2]
+        row = timing_report.compare(raw).iloc[0]
+        assert row["n_pairs"] == 5
+        assert row["ratio_of_medians"] == 2  # 6 / 3
+        assert row["median_paired_ratio"] == 2  # 10, 2, 2, 2, 0.4
+        assert row["median_paired_delta_seconds"] == 3  # 9, 2, 3, 4, -3
 
     def test_same_result_tolerates_only_the_last_digits(self) -> None:
         left = pd.DataFrame({"k": ["a"], "v": [1.0]})
@@ -270,3 +277,59 @@ def test_counts_must_match_exactly_even_within_float_tolerance() -> None:
 def test_missing_positions_must_match() -> None:
     left = pd.DataFrame({"v": [1.0, float("nan")]})
     assert timing_report.same_result(left, pd.DataFrame({"v": [float("nan"), 1.0]})) is not None
+
+
+def _protocol_raw() -> pd.DataFrame:
+    """프로토콜 그대로 돈 원자료의 모양."""
+    rows = [
+        {
+            "task": slot.task,
+            "engine": engine,
+            "scenario": slot.scenario,
+            "strategy": slot.strategy,
+            "round": slot.round,
+            "order_position": slot.order_position,
+            "warmup": slot.warmup,
+            "input_format": "parquet",
+        }
+        for engine in ("pandas", "polars")
+        for slot in _timing.schedule()
+    ]
+    return pd.DataFrame(rows)
+
+
+class TestStructure:
+    def _problems(self, raw: pd.DataFrame) -> list[str]:
+        return timing_report.check_structure(raw, tuple(_timing.TASKS), _timing.MEASURED_RUNS)
+
+    def test_the_protocol_shape_passes(self) -> None:
+        raw = _protocol_raw()
+        assert len(raw) == 32 * 6
+        assert self._problems(raw) == []
+
+    def test_a_missing_round_is_refused(self) -> None:
+        raw = _protocol_raw()
+        assert self._problems(raw.drop(index=raw.index[raw["round"] == 3][0]))
+
+    def test_a_duplicated_run_is_refused(self) -> None:
+        raw = _protocol_raw()
+        assert self._problems(pd.concat([raw, raw.iloc[[7]]], ignore_index=True))
+
+    def test_a_missing_cell_is_refused(self) -> None:
+        raw = _protocol_raw()
+        assert self._problems(raw[~((raw["engine"] == "polars") & (raw["scenario"] == "S4"))])
+
+    def test_a_run_out_of_order_is_refused(self) -> None:
+        raw = _protocol_raw()
+        raw.loc[raw["round"] == 2, "order_position"] = 1 - raw["order_position"]
+        assert self._problems(raw)
+
+    def test_a_warmup_counted_as_measured_is_refused(self) -> None:
+        raw = _protocol_raw()
+        raw.loc[raw["round"] == 0, "warmup"] = False
+        assert self._problems(raw)
+
+    def test_another_input_format_is_refused(self) -> None:
+        raw = _protocol_raw()
+        raw.loc[0, "input_format"] = "jsonl"
+        assert self._problems(raw)

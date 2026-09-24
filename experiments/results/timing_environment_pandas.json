@@ -1,0 +1,9 @@
+{
+  "environment_id": "0b3e4547a140",
+  "platform": "Windows-11-10.0.22000-SP0",
+  "machine": "AMD64",
+  "processor": "Intel64 Family 6 Model 154 Stepping 3, GenuineIntel",
+  "cpu_count": 16,
+  "python": "3.13.2",
+  "pandas": "3.0.6"
+}
