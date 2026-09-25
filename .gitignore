@@ -83,3 +83,6 @@ experiments/.build/
 # ---------- manuscript ----------
 manuscript/node_modules/
 manuscript/package-lock.json
+
+# Word 잠금 파일
+~$*
