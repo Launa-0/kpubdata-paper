@@ -103,6 +103,10 @@ children.push(p("공공데이터포털이 제공하는 데이터는 배포 세�
 children.push(p("본 연구는 계층화 자체가 아니라 계층 경계에 놓인 명시적 계약(contract)에 주목한다. Silver 계약은 원천 표현을 canonical 표현으로 옮기는 규칙을 선언으로 적는다. 본 연구의 기여는 다음과 같다."));
 children.push(p("(1) 계약 기반 Bronze→Silver→Gold 빌드 엔진 구현 및 공개, (2) 3개 공공데이터셋에 대한 표준화·비용·재현성의 정량 평가, (3) 계약이 무엇을 잡고 무엇을 놓치는지에 대한 통제된 변형 실험.", { indent: { left: 200 } }));
 children.push(rich([
+  { t: "관련 연구. ", b: true },
+  { t: "Lakehouse는 데이터 레이크 위에 트랜잭션 계층을 두어 웨어하우스의 보장을 얻는 구조로 제안됐고[1], 그 저장 계층의 ACID 보장은 Delta Lake로 구현됐다[2]. Bronze–Silver–Gold라는 계층 명명은 이 계열에서 실무 패턴으로 굳었으나[3], 계층화가 실제로 무엇을 바꾸는지를 공개 데이터셋 위에서 계층별로 측정한 보고는 찾기 어렵다. 본 연구는 그 측정을 한국 공공데이터에 대해 수행한다." },
+]));
+children.push(rich([
   { t: "본 연구가 주장하지 않는 것" , b: true },
   { t: ". 계층화가 monolithic 스크립트보다 더 나은 변환을 만든다고 주장하지 않는다. 인적 노력을 줄인다고도 주장하지 않는다 — 사용자 실험은 수행하지 않았다." },
 ]));
@@ -218,11 +222,12 @@ children.push(rich([
 
 // References
 children.push(h("참고문헌", HeadingLevel.HEADING_1));
-children.push(p("[1] Databricks, \"What is a Medallion Architecture?\", 2022.", { size: SMALL, after: 20 }));
-children.push(p("[2] 공공데이터포털, https://www.data.go.kr", { size: SMALL, after: 20 }));
-children.push(p("[3] 서울 열린데이터광장, https://data.seoul.go.kr", { size: SMALL, after: 20 }));
-children.push(p("[4] [빌더·실험 저장소 URL — 공개 후 기입]", { size: SMALL, after: 20 }));
-children.push(p("[5] [Medallion/데이터 품질 관련 국내 선행연구 1~2편 보강 필요]", { size: SMALL, after: 20 }));
+children.push(p("[1] M. Armbrust, A. Ghodsi, R. Xin, M. Zaharia, \"Lakehouse: A New Generation of Open Platforms that Unify Data Warehousing and Advanced Analytics,\" CIDR, 2021.", { size: SMALL, after: 20 }));
+children.push(p("[2] M. Armbrust et al., \"Delta Lake: High-Performance ACID Table Storage over Cloud Object Stores,\" PVLDB, 13(12), pp. 3411–3424, 2020.", { size: SMALL, after: 20 }));
+children.push(p("[3] Databricks, \"What is a Medallion Architecture?\", 2022.", { size: SMALL, after: 20 }));
+children.push(p("[4] 공공데이터포털, https://www.data.go.kr / 서울 열린데이터광장, https://data.seoul.go.kr", { size: SMALL, after: 20 }));
+children.push(p("[5] [빌더·실험 저장소 URL — 공개 후 기입]", { size: SMALL, after: 20 }));
+children.push(p("[6] [국내 공공데이터 품질·활용 선행연구 1~2편 — 저자 보강]", { size: SMALL, after: 20 }));
 
 const doc = new Document({
   styles: {
