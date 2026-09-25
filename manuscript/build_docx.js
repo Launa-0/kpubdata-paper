@@ -104,7 +104,7 @@ children.push(p("본 연구는 계층화 자체가 아니라 계층 경계에 �
 children.push(p("(1) 계약 기반 Bronze→Silver→Gold 빌드 엔진 구현 및 공개, (2) 3개 공공데이터셋에 대한 표준화·비용·재현성의 정량 평가, (3) 계약이 무엇을 잡고 무엇을 놓치는지에 대한 통제된 변형 실험.", { indent: { left: 200 } }));
 children.push(rich([
   { t: "관련 연구. ", b: true },
-  { t: "Lakehouse는 데이터 레이크 위에 트랜잭션 계층을 두어 웨어하우스의 보장을 얻는 구조로 제안됐고[1], 그 저장 계층의 ACID 보장은 Delta Lake로 구현됐다[2]. Bronze–Silver–Gold라는 계층 명명은 이 계열에서 실무 패턴으로 굳었으나[3], 계층화가 실제로 무엇을 바꾸는지를 공개 데이터셋 위에서 계층별로 측정한 보고는 찾기 어렵다. 본 연구는 그 측정을 한국 공공데이터에 대해 수행한다." },
+  { t: "Lakehouse는 데이터 레이크 위에 트랜잭션 계층을 두어 웨어하우스의 보장을 얻는 구조로 제안됐고[1], 그 저장 계층의 ACID 보장은 Delta Lake로 구현됐다[2]. Bronze–Silver–Gold라는 계층 명명은 이 계열에서 실무 패턴으로 굳었다[3]. 한편 국내에서는 공개데이터의 품질을 공공성·활용성·신뢰성·적합성 같은 특성으로 규정하거나[4], 개방표준 데이터를 대상으로 품질을 평가한 연구가 있다[5]. 두 갈래는 각각 저장 구조와 데이터 품질을 다루지만, 원천에서 분석용 데이터에 이르는 계층형 파이프라인이 표현·비용·재현성에 무엇을 하는지를 실제 공개 데이터셋 위에서 계층별로 측정한 보고는 찾기 어렵다. 본 연구는 그 측정을 수행한다." },
 ]));
 children.push(rich([
   { t: "본 연구가 주장하지 않는 것" , b: true },
@@ -225,9 +225,10 @@ children.push(h("참고문헌", HeadingLevel.HEADING_1));
 children.push(p("[1] M. Armbrust, A. Ghodsi, R. Xin, M. Zaharia, \"Lakehouse: A New Generation of Open Platforms that Unify Data Warehousing and Advanced Analytics,\" CIDR, 2021.", { size: SMALL, after: 20 }));
 children.push(p("[2] M. Armbrust et al., \"Delta Lake: High-Performance ACID Table Storage over Cloud Object Stores,\" PVLDB, 13(12), pp. 3411–3424, 2020.", { size: SMALL, after: 20 }));
 children.push(p("[3] Databricks, \"What is a Medallion Architecture?\", 2022.", { size: SMALL, after: 20 }));
-children.push(p("[4] 공공데이터포털, https://www.data.go.kr / 서울 열린데이터광장, https://data.seoul.go.kr", { size: SMALL, after: 20 }));
-children.push(p("[5] [빌더·실험 저장소 URL — 공개 후 기입]", { size: SMALL, after: 20 }));
-children.push(p("[6] [국내 공공데이터 품질·활용 선행연구 1~2편 — 저자 보강]", { size: SMALL, after: 20 }));
+children.push(p("[4] 박고은, 김창재, \"공공개방데이터 품질 특성에 관한 연구,\" 디지털융복합연구, 13(10), pp. 135–146, 2015.", { size: SMALL, after: 20 }));
+children.push(p("[5] 김학래, \"공공데이터 개방표준 데이터의 품질평가,\" 한국콘텐츠학회논문지, 20(9), pp. 439–447, 2020.", { size: SMALL, after: 20 }));
+children.push(p("[6] 공공데이터포털, https://www.data.go.kr / 서울 열린데이터광장, https://data.seoul.go.kr", { size: SMALL, after: 20 }));
+children.push(p("[7] [빌더·실험 저장소 URL — 공개 후 기입]", { size: SMALL, after: 20 }));
 
 const doc = new Document({
   styles: {
