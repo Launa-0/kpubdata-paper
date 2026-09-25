@@ -79,3 +79,7 @@ experiments/snapshots/*/*/source/
 experiments/datasets/*/*/*/data/
 # 실험 스크립트의 작업 디렉터리. 빌드 산출물과 중간 관측이 여기 쌓인다.
 experiments/.build/
+
+# ---------- manuscript ----------
+manuscript/node_modules/
+manuscript/package-lock.json
