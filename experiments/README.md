@@ -66,19 +66,32 @@ How it came to be this way is recorded in
   thing but spell a missing value differently are distinct in Bronze and
   identical in Silver
   ([`docs/bike-generation-runs.md`](docs/bike-generation-runs.md#duplicate_rate는-비교-지표가-아니다)).
-- **RQ2.** Silver and Gold need less preparation code than Bronze and
-  monolithic (T1 LOC 12 / 2 against 20 / 16; T3 34 / 2 against 50 / 46), with
-  every condition passing the equivalence gate. Materialized recomputation was
+- **RQ2.** Silver needs less preparation code than Bronze — raw LOC T1 12
+  against 20, T3 34 against 50 — with every condition passing the equivalence
+  gate. Two caveats bound that claim, both in
+  [`docs/code-metrics.md`](docs/code-metrics.md#instrumentation-is-inside-the-count).
+  Net of the `ctx.step(...)` instrumentation that sits inside `prepare`, the
+  reduction is 13 → 9 and 43 → 30, and **monolithic is no longer smaller than
+  Bronze** (15 against 13, 45 against 43) — so this measurement does not support
+  "layering needs less preparation code than a monolithic script". Gold's 2 LOC
+  is a definition, not a result: Gold is materialized in the analysis input's
+  shape, so its preparation is one `load` and the aggregation moved to build
+  time. Materialized recomputation was
   faster when only the analysis or Gold was invalidated (S1, S2), and slower
   than monolithic recomputation when Silver or anything above it was
   invalidated (S3, S4), because it writes and rereads checkpoints — in every
   task × engine cell and in all five same-round pairs.
 - **RQ3.** R1: 10/10 builds, one digest, byte-identical to the canonical
   Silver. R2: G1, G2, I1, G3 and the integrated snapshot pass one contract with
-  no row loss; G4 stops fail-closed at `silver/coalesce`. Perturbation: of 20
-  semantics-breaking mutations, 12 are rejected and 8 pass silently — 5 the
-  contract language could express but the contract does not declare, 3 it
-  cannot express.
+  no row loss; G4 stops fail-closed at `silver/coalesce`. Perturbation, both
+  directions: of 20 semantics-breaking mutations 12 are rejected and 8 pass
+  silently (5 the contract language could express but the contract does not
+  declare, 3 it cannot express — a split the authors assigned, having also
+  chosen what "expressible" means); of 31 semantics-preserving mutations 26 are
+  correctly accepted, **4 are falsely rejected** (`silver/tabularize` ×2,
+  `silver/cast`, `silver/zfill`) and **1 passes with values changed** (T-P10,
+  28,777 cells). The contract is right on 38 of 51 and wrong on 13, in both
+  directions.
 - **Storage.** Under one Parquet codec and writer, Bronze/Silver is 0.929 /
   0.919 / 0.994.
 

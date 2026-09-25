@@ -34,6 +34,54 @@ same work differently.
 **Diagnostic only** — `transformation_steps` is reported but not argued from;
 see [Why steps are diagnostic](#why-steps-are-diagnostic).
 
+## Instrumentation is inside the count
+
+The `with ctx.step(...)` statements that produce `transformation_steps` are
+lines of `prepare`, so they are counted in `preprocessing_loc` as well. This was
+not noticed when the boundary was declared.
+
+It matters because the instrumentation is **not spread evenly**. There is one
+line per transformation step, and step count is exactly what differs between
+conditions — so the instrumentation inflates whichever condition does more
+steps, which is the direction that flatters the layered path.
+
+| task | condition | `preprocessing_loc` | `with ctx.step` lines | net |
+| :--- | :--- | ---: | ---: | ---: |
+| task01 | bronze | 20 | 7 | 13 |
+| task01 | silver | 12 | 3 | 9 |
+| task01 | gold | 2 | 0 | 2 |
+| task01 | monolithic | 16 | 1 | 15 |
+| task03 | bronze | 50 | 7 | 43 |
+| task03 | silver | 34 | 4 | 30 |
+| task03 | gold | 2 | 0 | 2 |
+| task03 | monolithic | 46 | 1 | 45 |
+
+Two consequences, both carried into the paper rather than corrected away:
+
+* **Bronze → Silver still falls, by less.** 40% and 32% raw; 31% and 30% net.
+* **Monolithic is not smaller than Bronze.** Raw LOC says it is (16 against 20,
+  46 against 50); net of instrumentation it is larger (15 against 13, 45 against
+  43). The claim that layering needs less preparation code than a monolithic
+  script is therefore **not supported** by this measurement. What survives is
+  the Bronze → Silver reduction.
+
+The numbers in `tables/rq2_preparation` are left as measured. Subtracting the
+instrumentation there would hide the instrument rather than report it, and the
+net column is a subtraction any reader can check against this table.
+
+Counting these lines was the right call for the declared boundary — they are
+lines the condition's author wrote inside `prepare`. The error was not counting
+them; it was arguing from the total without saying what was in it.
+
+## Gold's two lines are a definition
+
+`gold.prepare` is `return AnalysisInput(frame=ctx.load(...))`. Gold is
+materialized in the analysis input's shape, so its preparation collapsing to a
+single load is a restatement of that design, not a finding about layering. The
+aggregation did not disappear; it moved to build time, which this measurement
+does not cover. Read the Bronze → Silver column for the RQ2 claim, and read
+Gold as the cost boundary it defines.
+
 Execution cost is not measured here. It comes only from the timing experiment
 (`scripts/_timing.py`, `results/timing_*`; see [statistics.md](statistics.md)).
 
